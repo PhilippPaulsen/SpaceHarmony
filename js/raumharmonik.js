@@ -955,36 +955,35 @@ class RaumharmonikApp {
     this._deserializeSnapshot(data);
   }
 
-  _collectGeometryForOBJ() {
-    const vertices = [];
-    const faces = [];
+  _collectTriangleFaces() {
     const transforms = this.symmetry.getTransforms();
-
     const faceDefinitions = [];
-    this.baseFaces.forEach((face) => {
-      faceDefinitions.push(face.keys);
-    });
+    const faceKeySet = new Set();
+
+    const addDefinition = (keys) => {
+      if (!Array.isArray(keys) || keys.length !== 3) {
+        return;
+      }
+      const faceKey = this._faceKeyFromKeys(keys);
+      if (faceKeySet.has(faceKey)) {
+        return;
+      }
+      faceKeySet.add(faceKey);
+      faceDefinitions.push(keys);
+    };
+
+    this.baseFaces.forEach((face) => addDefinition(face.keys));
 
     const appendVolumeFaces = (volume) => {
       if (!volume.faceKeys) {
         return;
       }
-      volume.faceKeys.forEach((keys) => {
-        faceDefinitions.push(keys);
-      });
+      volume.faceKeys.forEach((keys) => addDefinition(keys));
     };
 
     this.baseVolumes.forEach(appendVolumeFaces);
-    this.manualVolumes.forEach(appendVolumeFaces);
 
-    const addFace = (points) => {
-      const baseIndex = vertices.length + 1;
-      points.forEach((p) => {
-        vertices.push(`v ${p.x.toFixed(6)} ${p.y.toFixed(6)} ${p.z.toFixed(6)}`);
-      });
-      faces.push(`f ${baseIndex} ${baseIndex + 1} ${baseIndex + 2}`);
-    };
-
+    const triangles = [];
     transforms.forEach((matrix) => {
       faceDefinitions.forEach((keys) => {
         const points = keys.map((key) => {
@@ -994,8 +993,38 @@ class RaumharmonikApp {
         if (points.some((p) => !p)) {
           return;
         }
-        addFace(points);
+        triangles.push(points);
       });
+    });
+
+    return triangles;
+  }
+
+  _computeTriangleNormal(points) {
+    if (!points || points.length !== 3) {
+      return new THREE.Vector3(0, 0, 0);
+    }
+    const [a, b, c] = points;
+    const ab = new THREE.Vector3().subVectors(b, a);
+    const ac = new THREE.Vector3().subVectors(c, a);
+    const normal = new THREE.Vector3().crossVectors(ab, ac);
+    if (normal.lengthSq() < 1e-12) {
+      return new THREE.Vector3(0, 0, 0);
+    }
+    return normal.normalize();
+  }
+
+  _collectGeometryForOBJ() {
+    const vertices = [];
+    const faces = [];
+    const triangles = this._collectTriangleFaces();
+
+    triangles.forEach((points) => {
+      const baseIndex = vertices.length + 1;
+      points.forEach((p) => {
+        vertices.push(`v ${p.x.toFixed(6)} ${p.y.toFixed(6)} ${p.z.toFixed(6)}`);
+      });
+      faces.push(`f ${baseIndex} ${baseIndex + 1} ${baseIndex + 2}`);
     });
 
     return { vertices, faces };
@@ -1014,6 +1043,29 @@ class RaumharmonikApp {
       ...faces,
     ];
     this._downloadBlob(lines.join('\n'), 'raumharmonik_export.obj', 'text/plain');
+  }
+
+  exportToSTL() {
+    const triangles = this._collectTriangleFaces();
+    if (!triangles.length) {
+      console.warn('Keine Geometrie zum Exportieren gefunden.');
+      return;
+    }
+    const lines = ['solid Raumharmonik'];
+    triangles.forEach((points) => {
+      const normal = this._computeTriangleNormal(points);
+      lines.push(
+        `  facet normal ${normal.x.toFixed(6)} ${normal.y.toFixed(6)} ${normal.z.toFixed(6)}`
+      );
+      lines.push('    outer loop');
+      points.forEach((p) => {
+        lines.push(`      vertex ${p.x.toFixed(6)} ${p.y.toFixed(6)} ${p.z.toFixed(6)}`);
+      });
+      lines.push('    endloop');
+      lines.push('  endfacet');
+    });
+    lines.push('endsolid Raumharmonik');
+    this._downloadBlob(lines.join('\n'), 'raumharmonik_export.stl', 'text/plain');
   }
 
   _autoCloseFromSelection() {
@@ -2551,6 +2603,7 @@ function init() {
   const exportJsonButton = document.getElementById('export-json-button');
   const importJsonButton = document.getElementById('import-json-button');
   const exportObjButton = document.getElementById('export-obj-button');
+  const exportStlButton = document.getElementById('export-stl-button');
   const presetSelectEl = document.getElementById('preset-select');
   const faceCountEl = document.getElementById('face-count');
   const clearButton = document.getElementById('clear-button');
@@ -2593,6 +2646,10 @@ function init() {
 
   if (exportObjButton) {
     exportObjButton.addEventListener('click', () => app.exportToOBJ());
+  }
+
+  if (exportStlButton) {
+    exportStlButton.addEventListener('click', () => app.exportToSTL());
   }
 
   if (closeFaceButton) {
