@@ -1,0 +1,22 @@
+# .gitignore für Raumharmonik-Projekt
+
+# Betriebssystem
+.DS_Store
+Thumbs.db
+
+# Node / Abhängigkeiten
+node_modules/
+dist/
+
+# VSCode & IDEs
+.vscode/
+.idea/
+
+# Persönliche Daten
+*.key
+*.pem
+
+# Android/Adobe/Benutzerdaten
+.android/
+.adobe/
+*.log

@@ -1,0 +1,89 @@
+body {
+  font-family: Arial, sans-serif;
+  margin: 20px;
+  background-color: #ffffff;
+  color: #000000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 100vh;
+  font-size: 13px;
+}
+
+#canvas-container {
+  margin-bottom: 16px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+}
+
+#controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(360px, 100%);
+}
+
+#controls button {
+  align-self: flex-start;
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.control-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.control-row label,
+.control-row span {
+  font-weight: 600;
+}
+
+.control-row input,
+.control-row select {
+  font-size: 13px;
+  padding: 4px 6px;
+  box-sizing: border-box;
+}
+
+#grid-density {
+  width: 60px;
+}
+
+#translation-count,
+#translation-step {
+  width: 60px;
+}
+
+#rotoreflection-angle,
+#rotoreflection-count,
+#screw-angle,
+#screw-distance,
+#screw-count {
+  width: 60px;
+}
+
+.checkbox-inline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 400;
+}
+
+.checkbox-inline input {
+  margin: 0;
+}
+
+.action-row button {
+  padding: 6px 8px;
+}
+
+.action-row select {
+  min-width: 120px;
+}

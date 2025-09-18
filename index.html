@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Raumharmonik MVP</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js",
+        "three/": "https://cdn.jsdelivr.net/npm/three@0.152.2/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="canvas-container"></div>
+
+  <div id="controls">
+    <button id="clear-button">Alles löschen</button>
+
+    <div class="control-row action-row">
+      <button id="undo-button">Undo</button>
+      <button id="redo-button">Redo</button>
+      <button id="random-form-button">Zufallsform</button>
+      <button id="complete-shapes-button">Flächen/Volumen schließen</button>
+      <label for="preset-select">Preset:</label>
+      <select id="preset-select"></select>
+    </div>
+
+    <div class="control-row">
+      <label for="grid-density">Punktdichte:</label>
+      <input type="number" id="grid-density" min="1" max="12" step="1" value="1" title="1 = nur Eckpunkte, 2 = plus Mittelpunkt">
+      <label class="checkbox-inline"><input type="checkbox" id="toggle-points" checked> Punkte</label>
+      <label class="checkbox-inline"><input type="checkbox" id="toggle-lines" checked> Linien</label>
+      <label class="checkbox-inline"><input type="checkbox" id="toggle-curved-lines"> Kurven</label>
+    </div>
+
+    <div class="control-row">
+      <span>Spiegelung:</span>
+      <label class="checkbox-inline"><input type="checkbox" id="reflection-xy" checked> XY</label>
+      <label class="checkbox-inline"><input type="checkbox" id="reflection-yz" checked> YZ</label>
+      <label class="checkbox-inline"><input type="checkbox" id="reflection-zx" checked> ZX</label>
+    </div>
+
+    <div class="control-row">
+      <label class="checkbox-inline"><input type="checkbox" id="toggle-inversion"> Inversion</label>
+    </div>
+
+    <div class="control-row">
+      <label for="rotation-axis">Rotation:</label>
+      <select id="rotation-axis">
+        <option value="none">Keine</option>
+        <option value="x">X</option>
+        <option value="y">Y</option>
+        <option value="z">Z</option>
+        <option value="all" selected>Alle (XYZ)</option>
+      </select>
+    </div>
+
+    <div class="control-row">
+      <label for="rotoreflection-axis">Rotospiegel:</label>
+      <select id="rotoreflection-axis">
+        <option value="none">Keine</option>
+        <option value="x">X</option>
+        <option value="y">Y</option>
+        <option value="z">Z</option>
+      </select>
+      <label for="rotoreflection-plane">Ebene:</label>
+      <select id="rotoreflection-plane">
+        <option value="xy">XY</option>
+        <option value="yz">YZ</option>
+        <option value="zx">ZX</option>
+      </select>
+      <label for="rotoreflection-angle">Winkel°:</label>
+      <input type="number" id="rotoreflection-angle" value="180" step="1">
+      <label for="rotoreflection-count">Anz.:</label>
+      <input type="number" id="rotoreflection-count" value="0" min="0" max="12">
+      <label class="checkbox-inline"><input type="checkbox" id="rotoreflection-enabled"> Aktiv</label>
+    </div>
+
+    <div class="control-row">
+      <label for="translation-axis">Translation:</label>
+      <select id="translation-axis">
+        <option value="none" selected>Keine</option>
+        <option value="x">X</option>
+        <option value="y">Y</option>
+        <option value="z">Z</option>
+        <option value="all">Alle (XYZ)</option>
+      </select>
+      <label for="translation-count">Wdh.:</label>
+      <input type="number" id="translation-count" min="0" max="5" value="0">
+      <label for="translation-step">Schritt:</label>
+      <input type="number" id="translation-step" min="0" max="2" step="0.1" value="0.5">
+    </div>
+
+    <div class="control-row">
+      <label for="screw-axis">Schraubung:</label>
+      <select id="screw-axis">
+        <option value="none" selected>Keine</option>
+        <option value="x">X</option>
+        <option value="y">Y</option>
+        <option value="z">Z</option>
+      </select>
+      <label for="screw-angle">Winkel°:</label>
+      <input type="number" id="screw-angle" value="120" step="1">
+      <label for="screw-distance">Gang:</label>
+      <input type="number" id="screw-distance" value="0.5" step="0.1">
+      <label for="screw-count">Anz.:</label>
+      <input type="number" id="screw-count" value="0" min="0" max="12">
+      <label class="checkbox-inline"><input type="checkbox" id="screw-enabled"> Aktiv</label>
+    </div>
+
+    <div class="control-row">
+      <span id="face-count">Flächen: 0 | Volumen: 0</span>
+    </div>
+  </div>
+
+  <script type="module" src="js/raumharmonik.js"></script>
+</body>
+</html>
