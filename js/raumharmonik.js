@@ -958,33 +958,44 @@ class RaumharmonikApp {
   _collectGeometryForOBJ() {
     const vertices = [];
     const faces = [];
-    const addFace = (keys) => {
-      const pts = keys.map((key) => this._vectorFromKey(key));
-      if (pts.some((p) => !p)) {
+    const transforms = this.symmetry.getTransforms();
+
+    const faceDefinitions = [];
+    this.baseFaces.forEach((face) => {
+      faceDefinitions.push(face.keys);
+    });
+
+    const appendVolumeFaces = (volume) => {
+      if (!volume.faceKeys) {
         return;
       }
+      volume.faceKeys.forEach((keys) => {
+        faceDefinitions.push(keys);
+      });
+    };
+
+    this.baseVolumes.forEach(appendVolumeFaces);
+    this.manualVolumes.forEach(appendVolumeFaces);
+
+    const addFace = (points) => {
       const baseIndex = vertices.length + 1;
-      pts.forEach((p) => {
+      points.forEach((p) => {
         vertices.push(`v ${p.x.toFixed(6)} ${p.y.toFixed(6)} ${p.z.toFixed(6)}`);
       });
       faces.push(`f ${baseIndex} ${baseIndex + 1} ${baseIndex + 2}`);
     };
 
-    this.baseFaces.forEach((face) => addFace(face.keys));
-    this.manualFaces.forEach((face) => addFace(face.keys));
-
-    this.baseVolumes.forEach((volume) => {
-      if (!volume.faceKeys) {
-        return;
-      }
-      volume.faceKeys.forEach((keys) => addFace(keys));
-    });
-
-    this.manualVolumes.forEach((volume) => {
-      if (!volume.faceKeys) {
-        return;
-      }
-      volume.faceKeys.forEach((keys) => addFace(keys));
+    transforms.forEach((matrix) => {
+      faceDefinitions.forEach((keys) => {
+        const points = keys.map((key) => {
+          const base = this._vectorFromKey(key);
+          return base ? base.applyMatrix4(matrix) : null;
+        });
+        if (points.some((p) => !p)) {
+          return;
+        }
+        addFace(points);
+      });
     });
 
     return { vertices, faces };
