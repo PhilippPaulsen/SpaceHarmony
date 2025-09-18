@@ -405,10 +405,12 @@ class RaumharmonikApp {
     this.activePointMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
     this.selectionPointMaterial = new THREE.MeshBasicMaterial({ color: 0x0077ff });
     this.lineMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
-    this.faceMaterial = new THREE.MeshStandardMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.22, side: THREE.DoubleSide });
-    this.faceRegularMaterial = new THREE.MeshStandardMaterial({ color: 0x33ff88, transparent: true, opacity: 0.28, side: THREE.DoubleSide, emissive: 0x0 });
-    this.volumeMaterial = new THREE.MeshStandardMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.18, side: THREE.DoubleSide });
-    this.volumeRegularMaterial = new THREE.MeshStandardMaterial({ color: 0x33ff88, transparent: true, opacity: 0.22, side: THREE.DoubleSide });
+    this.neutralFaceMaterial = new THREE.MeshStandardMaterial({ color: 0x888888, transparent: true, opacity: 0.15, side: THREE.DoubleSide });
+    this.neutralVolumeMaterial = new THREE.MeshStandardMaterial({ color: 0x888888, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
+    this.faceHighlightMaterial = new THREE.MeshStandardMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.22, side: THREE.DoubleSide });
+    this.faceRegularMaterial = new THREE.MeshStandardMaterial({ color: 0x33ff88, transparent: true, opacity: 0.28, side: THREE.DoubleSide, emissive: 0x002200 });
+    this.volumeHighlightMaterial = new THREE.MeshStandardMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.18, side: THREE.DoubleSide });
+    this.volumeRegularMaterial = new THREE.MeshStandardMaterial({ color: 0x33ff88, transparent: true, opacity: 0.22, side: THREE.DoubleSide, emissive: 0x002200 });
     this.highlightMaterial = new THREE.MeshStandardMaterial({ color: 0xffff66, transparent: true, opacity: 0.4, side: THREE.DoubleSide, emissive: 0x333300 });
 
     this.useCurvedLines = false;
@@ -445,12 +447,14 @@ class RaumharmonikApp {
     this.hiddenVolumes = new Set();
     this.showClosedForms = true;
     this.autoCloseFaces = false;
+    this.useRegularHighlight = false;
     this.pickableMeshes = [];
     this.hoveredMesh = null;
     this.hoveredOriginalMaterial = null;
     this.hoveredType = null;
     this.pointerDownHit = null;
     this._keyboardHandler = (event) => this._onKeyDown(event);
+    this.snapshotVersion = '1.0.0';
 
     this._addCubeFrame();
     this._setupLighting();
@@ -490,6 +494,14 @@ class RaumharmonikApp {
     this._clearHover();
     this.pointerDownHit = null;
     this._rebuildSymmetryObjects();
+  }
+
+  async loadFromFile(event) {
+    const files = event.target.files;
+    if (!files || !files.length) {
+      return;
+    }
+    await this.importFromJSON(files[0]);
   }
 
   updateReflections({ xy, yz, zx }) {
@@ -553,9 +565,18 @@ class RaumharmonikApp {
     this.autoCloseFaces = Boolean(flag);
   }
 
+  updateColorHighlight(flag) {
+    this.useRegularHighlight = Boolean(flag);
+    this._rebuildSymmetryObjects();
+  }
+
   closeSelectedFace() {
     const keys = this._getSelectionKeys(3);
     if (keys.length !== 3) {
+      const added = this.completeSurfacesAndVolumes({ closeFacesOnly: true, maxEdges: 40 });
+      if (added === 0) {
+        this._rebuildSymmetryObjects();
+      }
       return;
     }
     const faceKey = this._faceKeyFromKeys(keys);
@@ -571,6 +592,10 @@ class RaumharmonikApp {
   closeSelectedVolume() {
     const keys = this._getSelectionKeys(4);
     if (keys.length !== 4) {
+      const added = this.completeSurfacesAndVolumes({ closeFacesOnly: false, maxEdges: 60 });
+      if (added === 0) {
+        this._rebuildSymmetryObjects();
+      }
       return;
     }
     const volumeKey = this._volumeKeyFromKeys(keys);
@@ -774,6 +799,210 @@ class RaumharmonikApp {
       return true;
     }
     return this.baseVolumes.some((volume) => volume.key === volumeKey);
+  }
+
+  _currentStateSettings() {
+    return {
+      gridDivisions: this.gridDivisions,
+      showPoints: this.showPoints,
+      showLines: this.showLines,
+      useCurvedLines: this.useCurvedLines,
+      useCurvedSurfaces: this.useCurvedSurfaces,
+      showClosedForms: this.showClosedForms,
+      autoCloseFaces: this.autoCloseFaces,
+      useRegularHighlight: this.useRegularHighlight,
+      symmetry: { ...this.symmetry.settings },
+    };
+  }
+
+  _serializeSnapshot() {
+    const segments = this.baseSegments.map((segment) => ({
+      start: [segment.start.x, segment.start.y, segment.start.z],
+      end: [segment.end.x, segment.end.y, segment.end.z],
+      key: segment.key,
+      indices: segment.indices ? segment.indices.slice() : null,
+    }));
+    const snapshot = {
+      meta: {
+        version: this.snapshotVersion,
+        createdAt: new Date().toISOString(),
+      },
+      settings: this._currentStateSettings(),
+      segments,
+      manualFaces: Array.from(this.manualFaces.values()).map((face) => ({
+        keys: face.keys.slice(),
+        isRegular: Boolean(face.isRegular),
+        source: face.source || 'manual',
+      })),
+      manualVolumes: Array.from(this.manualVolumes.values()).map((volume) => ({
+        keys: volume.keys.slice(),
+        isRegular: Boolean(volume.isRegular),
+        source: volume.source || 'manual',
+      })),
+      hiddenFaces: Array.from(this.hiddenFaces),
+      hiddenVolumes: Array.from(this.hiddenVolumes),
+    };
+    return snapshot;
+  }
+
+  _deserializeSnapshot(snapshot) {
+    if (!snapshot || typeof snapshot !== 'object') {
+      throw new Error('Ungültiger Snapshot');
+    }
+    const { settings } = snapshot;
+    const expectedVersion = this.snapshotVersion.split('.')[0];
+    const snapshotVersion = snapshot.meta && snapshot.meta.version ? String(snapshot.meta.version) : '0.0.0';
+    if (String(snapshotVersion).split('.')[0] !== expectedVersion) {
+      console.warn('Snapshot-Version weicht ab:', snapshotVersion, '!=', this.snapshotVersion);
+    }
+
+    const safeSettings = Object.assign({}, this._currentStateSettings(), settings || {});
+    this.updateGrid(safeSettings.gridDivisions);
+    this.updateShowPoints(safeSettings.showPoints);
+    this.updateShowLines(safeSettings.showLines);
+    this.updateCurvedLines(safeSettings.useCurvedLines);
+    this.updateCurvedSurfaces(safeSettings.useCurvedSurfaces);
+    this.updateShowClosedForms(safeSettings.showClosedForms);
+    this.updateAutoCloseFaces(safeSettings.autoCloseFaces);
+    this.updateColorHighlight(safeSettings.useRegularHighlight);
+
+    if (safeSettings.symmetry) {
+      const sym = safeSettings.symmetry;
+      this.updateReflections(sym.reflections || {});
+      this.updateRotation(sym.rotation ? sym.rotation.axis : 'all');
+      this.updateTranslation(
+        sym.translation ? sym.translation.axis : 'none',
+        sym.translation ? sym.translation.count : 0,
+        sym.translation ? sym.translation.step : 0.5
+      );
+      this.updateInversion(sym.inversion);
+      this.updateRotoreflection(sym.rotoreflection || {});
+      this.updateScrew(sym.screw || {});
+    }
+
+    this._clearSegments();
+    this._clearSelection();
+
+    const segmentObjects = (snapshot.segments || []).map((data) => {
+      const start = new THREE.Vector3().fromArray(data.start);
+      const end = new THREE.Vector3().fromArray(data.end);
+      return { start, end, key: this._segmentKey(start, end) };
+    });
+    if (segmentObjects.length) {
+      this._addSegments(segmentObjects);
+    }
+
+    this.manualFaces.clear();
+    (snapshot.manualFaces || []).forEach((face) => {
+      if (!Array.isArray(face.keys) || face.keys.length !== 3) {
+        return;
+      }
+      const faceKey = this._faceKeyFromKeys(face.keys);
+      this.manualFaces.set(faceKey, {
+        key: faceKey,
+        keys: face.keys.slice(),
+        source: face.source || 'manual',
+        isRegular: Boolean(face.isRegular),
+      });
+    });
+
+    this.manualVolumes.clear();
+    (snapshot.manualVolumes || []).forEach((volume) => {
+      if (!Array.isArray(volume.keys) || volume.keys.length !== 4) {
+        return;
+      }
+      const volumeKey = this._volumeKeyFromKeys(volume.keys);
+      this.manualVolumes.set(volumeKey, {
+        key: volumeKey,
+        keys: volume.keys.slice(),
+        source: volume.source || 'manual',
+        isRegular: Boolean(volume.isRegular),
+        faceKeys: this._volumeFaceCombinations(volume.keys).map((combo) => combo.slice()),
+      });
+    });
+
+    this.hiddenFaces = new Set(snapshot.hiddenFaces || []);
+    this.hiddenVolumes = new Set(snapshot.hiddenVolumes || []);
+
+    this._updateFaces();
+    this._rebuildSymmetryObjects();
+  }
+
+  _downloadBlob(content, filename, type = 'application/json') {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  exportToJSON() {
+    const snapshot = this._serializeSnapshot();
+    const content = JSON.stringify(snapshot, null, 2);
+    this._downloadBlob(content, 'raumharmonik_snapshot.json');
+  }
+
+  async importFromJSON(file) {
+    if (!file) {
+      return;
+    }
+    const text = await file.text();
+    const data = JSON.parse(text);
+    this._deserializeSnapshot(data);
+  }
+
+  _collectGeometryForOBJ() {
+    const vertices = [];
+    const faces = [];
+    const addFace = (keys) => {
+      const pts = keys.map((key) => this._vectorFromKey(key));
+      if (pts.some((p) => !p)) {
+        return;
+      }
+      const baseIndex = vertices.length + 1;
+      pts.forEach((p) => {
+        vertices.push(`v ${p.x.toFixed(6)} ${p.y.toFixed(6)} ${p.z.toFixed(6)}`);
+      });
+      faces.push(`f ${baseIndex} ${baseIndex + 1} ${baseIndex + 2}`);
+    };
+
+    this.baseFaces.forEach((face) => addFace(face.keys));
+    this.manualFaces.forEach((face) => addFace(face.keys));
+
+    this.baseVolumes.forEach((volume) => {
+      if (!volume.faceKeys) {
+        return;
+      }
+      volume.faceKeys.forEach((keys) => addFace(keys));
+    });
+
+    this.manualVolumes.forEach((volume) => {
+      if (!volume.faceKeys) {
+        return;
+      }
+      volume.faceKeys.forEach((keys) => addFace(keys));
+    });
+
+    return { vertices, faces };
+  }
+
+  exportToOBJ() {
+    const { vertices, faces } = this._collectGeometryForOBJ();
+    if (!vertices.length) {
+      console.warn('Keine Geometrie zum Exportieren gefunden.');
+      return;
+    }
+    const lines = [
+      '# Raumharmonik OBJ Export',
+      'o RaumharmonikShape',
+      ...vertices,
+      ...faces,
+    ];
+    this._downloadBlob(lines.join('\n'), 'raumharmonik_export.obj', 'text/plain');
   }
 
   _autoCloseFromSelection() {
@@ -2180,15 +2409,17 @@ class RaumharmonikApp {
       if (baseEntries.length) {
         transforms.forEach((matrix) => {
           baseEntries.forEach(({ geometry, face }) => {
-            const patch = geometry.clone();
-            patch.applyMatrix4(matrix);
-            patch.computeVertexNormals();
-            const material = face.isRegular ? this.faceRegularMaterial : this.faceMaterial;
-            const mesh = new THREE.Mesh(patch, material);
-            mesh.userData = {
-              type: 'face',
-              faceKey: face.key,
-              source: face.source,
+          const patch = geometry.clone();
+          patch.applyMatrix4(matrix);
+          patch.computeVertexNormals();
+          const material = this.useRegularHighlight
+            ? (face.isRegular ? this.faceRegularMaterial : this.faceHighlightMaterial)
+            : this.neutralFaceMaterial;
+          const mesh = new THREE.Mesh(patch, material);
+          mesh.userData = {
+            type: 'face',
+            faceKey: face.key,
+            source: face.source,
             };
             this.pickableMeshes.push(mesh);
             faceGroup.add(mesh);
@@ -2223,15 +2454,17 @@ class RaumharmonikApp {
       if (baseEntries.length) {
         transforms.forEach((matrix) => {
           baseEntries.forEach(({ geometry, volume, faceKeys }) => {
-            const patch = geometry.clone();
-            patch.applyMatrix4(matrix);
-            patch.computeVertexNormals();
-            const material = volume.isRegular ? this.volumeRegularMaterial : this.volumeMaterial;
-            const mesh = new THREE.Mesh(patch, material);
-            mesh.userData = {
-              type: 'volumeFace',
-              volumeKey: volume.key,
-              faceKey: faceKeys.slice().sort().join('#'),
+          const patch = geometry.clone();
+          patch.applyMatrix4(matrix);
+          patch.computeVertexNormals();
+          const material = this.useRegularHighlight
+            ? (volume.isRegular ? this.volumeRegularMaterial : this.volumeHighlightMaterial)
+            : this.neutralVolumeMaterial;
+          const mesh = new THREE.Mesh(patch, material);
+          mesh.userData = {
+            type: 'volumeFace',
+            volumeKey: volume.key,
+            faceKey: faceKeys.slice().sort().join('#'),
               source: volume.source,
             };
             this.pickableMeshes.push(mesh);
@@ -2295,6 +2528,7 @@ function init() {
   const showLinesEl = document.getElementById('toggle-lines');
   const showCurvedLinesEl = document.getElementById('toggle-curved-lines');
   const showCurvedSurfacesEl = document.getElementById('toggle-curved-surfaces');
+  const colorHighlightEl = document.getElementById('toggle-color-highlights');
   const closeFaceButton = document.getElementById('close-face-button');
   const closeVolumeButton = document.getElementById('close-volume-button');
   const showClosedEl = document.getElementById('toggle-show-closed');
@@ -2303,7 +2537,9 @@ function init() {
   const undoButton = document.getElementById('undo-button');
   const redoButton = document.getElementById('redo-button');
   const randomFormButton = document.getElementById('random-form-button');
-  const completeShapesButton = document.getElementById('complete-shapes-button');
+  const exportJsonButton = document.getElementById('export-json-button');
+  const importJsonButton = document.getElementById('import-json-button');
+  const exportObjButton = document.getElementById('export-obj-button');
   const presetSelectEl = document.getElementById('preset-select');
   const faceCountEl = document.getElementById('face-count');
   const clearButton = document.getElementById('clear-button');
@@ -2324,8 +2560,28 @@ function init() {
     randomFormButton.addEventListener('click', () => app.generateRandomForm());
   }
 
-  if (completeShapesButton) {
-    completeShapesButton.addEventListener('click', () => app.completeSurfacesAndVolumes());
+  if (exportJsonButton) {
+    exportJsonButton.addEventListener('click', () => app.exportToJSON());
+  }
+
+  if (importJsonButton) {
+    importJsonButton.addEventListener('click', () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'application/json';
+      input.addEventListener('change', async (event) => {
+        try {
+          await app.loadFromFile(event);
+        } catch (error) {
+          console.error('Import fehlgeschlagen:', error);
+        }
+      }, { once: true });
+      input.click();
+    });
+  }
+
+  if (exportObjButton) {
+    exportObjButton.addEventListener('click', () => app.exportToOBJ());
   }
 
   if (closeFaceButton) {
@@ -2469,6 +2725,14 @@ function init() {
     };
     showCurvedSurfacesEl.addEventListener('change', applyCurvedSurfaces);
     applyCurvedSurfaces();
+  }
+
+  if (colorHighlightEl) {
+    const applyColorHighlight = () => {
+      app.updateColorHighlight(colorHighlightEl.checked);
+    };
+    colorHighlightEl.addEventListener('change', applyColorHighlight);
+    applyColorHighlight();
   }
 
   if (showClosedEl) {
