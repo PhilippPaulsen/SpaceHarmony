@@ -25,6 +25,7 @@ Ein exploratives, interaktives 3D-Projekt zur Umsetzung von Wilhelm Ostwalds Ide
   - Rotationsspiegelung (Rotoreflektion)  
   - Schraubsymmetrie (Rotation + Translation)  
 - ✅ Optionaler Kurvenmodus (Quadratic Bézier) für Linien  
+- ✅ Umschaltbare gewölbte Flächen und Tetraeder-Volumen auf Bézier-Basis  
 - ✅ Zufallsgenerator für neue Linienkonfigurationen  
 - ✅ Presets: Würfelrahmen, Tetraeder, Diagonalkreuz, Stern  
 - ✅ Automatische Erkennung geschlossener Flächen (Dreiecke) und Volumina (Tetraeder)  

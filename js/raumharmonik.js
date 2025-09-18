@@ -409,6 +409,9 @@ class RaumharmonikApp {
 
     this.useCurvedLines = false;
     this.curvedLineMaterial = new THREE.LineBasicMaterial({ color: 0x555555 });
+    this.useCurvedSurfaces = false;
+    this.curvedSurfaceSegments = 8;
+    this.curvedSurfaceCurvature = 0.3;
 
     this.gridDivisions = 1;
     this.axisPositions = this._axisPositions(this.gridDivisions);
@@ -497,6 +500,11 @@ class RaumharmonikApp {
 
   updateCurvedLines(flag) {
     this.useCurvedLines = Boolean(flag);
+    this._rebuildSymmetryObjects();
+  }
+
+  updateCurvedSurfaces(flag) {
+    this.useCurvedSurfaces = Boolean(flag);
     this._rebuildSymmetryObjects();
   }
 
@@ -614,6 +622,113 @@ class RaumharmonikApp {
     };
     segment.key = this._segmentKey(pointA, pointB);
     return segment;
+  }
+
+  _buildCurvedTriangleGeometryFromKeys(keys, options = {}) {
+    if (!Array.isArray(keys) || keys.length !== 3) {
+      return null;
+    }
+    const points = keys.map((key) => this._vectorFromKey(key));
+    if (points.some((pt) => !pt)) {
+      return null;
+    }
+    return this._buildCurvedTriangleGeometry(points, options);
+  }
+
+  _buildCurvedTriangleGeometry(points, { curvatureScale = 1 } = {}) {
+    if (!Array.isArray(points) || points.length !== 3) {
+      return null;
+    }
+    const [p0, p1, p2] = points.map((pt) => pt.clone());
+    const edge01 = new THREE.Vector3().subVectors(p1, p0);
+    const edge02 = new THREE.Vector3().subVectors(p2, p0);
+    const normal = new THREE.Vector3().crossVectors(edge01, edge02);
+    const normalLength = normal.length();
+    if (normalLength < 1e-6) {
+      return null;
+    }
+    normal.divideScalar(normalLength);
+
+    const edge12 = new THREE.Vector3().subVectors(p2, p1);
+    const avgEdgeLength = (edge01.length() + edge02.length() + edge12.length()) / 3;
+    const curvature = Math.max(0, this.curvedSurfaceCurvature * curvatureScale * avgEdgeLength);
+
+    const control01 = new THREE.Vector3().addVectors(p0, p1).multiplyScalar(0.5).addScaledVector(normal, curvature);
+    const control12 = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5).addScaledVector(normal, curvature);
+    const control20 = new THREE.Vector3().addVectors(p2, p0).multiplyScalar(0.5).addScaledVector(normal, curvature);
+
+    const segments = Math.max(1, Math.floor(this.curvedSurfaceSegments));
+    const positions = [];
+    const indexMap = Array.from({ length: segments + 1 }, () => []);
+    let vertexIndex = 0;
+
+    for (let i = 0; i <= segments; i += 1) {
+      for (let j = 0; j <= segments - i; j += 1) {
+        const u = (segments - i - j) / segments;
+        const v = i / segments;
+        const w = j / segments;
+
+        const basePoint = this._evaluateQuadraticBezierTriangle(
+          p0,
+          p1,
+          p2,
+          control01,
+          control12,
+          control20,
+          u,
+          v,
+          w
+        );
+
+        const bulgeFactor = curvature === 0 ? 0 : 6 * u * v * w;
+        if (bulgeFactor !== 0) {
+          basePoint.addScaledVector(normal, curvature * bulgeFactor);
+        }
+
+        positions.push(basePoint.x, basePoint.y, basePoint.z);
+        indexMap[i][j] = vertexIndex;
+        vertexIndex += 1;
+      }
+    }
+
+    const indices = [];
+    for (let i = 0; i < segments; i += 1) {
+      for (let j = 0; j < segments - i; j += 1) {
+        const currentRow = indexMap[i];
+        const nextRow = indexMap[i + 1];
+        const a = currentRow[j];
+        const b = nextRow && j < nextRow.length ? nextRow[j] : -1;
+        const c = currentRow[j + 1];
+        if (a !== undefined && b !== -1 && c !== undefined) {
+          indices.push(a, b, c);
+        }
+        const d = nextRow && j + 1 < nextRow.length ? nextRow[j + 1] : -1;
+        if (b !== -1 && c !== undefined && d !== -1) {
+          indices.push(b, d, c);
+        }
+      }
+    }
+
+    if (!positions.length || !indices.length) {
+      return null;
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    return geometry;
+  }
+
+  _evaluateQuadraticBezierTriangle(p0, p1, p2, c01, c12, c20, u, v, w) {
+    const point = new THREE.Vector3();
+    point.addScaledVector(p0, u * u);
+    point.addScaledVector(p1, v * v);
+    point.addScaledVector(p2, w * w);
+    point.addScaledVector(c01, 2 * u * v);
+    point.addScaledVector(c12, 2 * v * w);
+    point.addScaledVector(c20, 2 * w * u);
+    return point;
   }
 
   _addSegments(segments) {
@@ -1419,54 +1534,113 @@ class RaumharmonikApp {
     }
 
     if (this.baseFaces.length) {
-      const facePositions = [];
-      transforms.forEach((matrix) => {
+      if (this.useCurvedSurfaces) {
+        const faceGroup = new THREE.Group();
+        const baseFaceGeometries = [];
         this.baseFaces.forEach((face) => {
-          face.keys.forEach((key) => {
-            const vertex = this._vectorFromKey(key);
-            if (vertex) {
-              vertex.applyMatrix4(matrix);
-              facePositions.push(vertex.x, vertex.y, vertex.z);
-            }
+          const geometry = this._buildCurvedTriangleGeometryFromKeys(face.keys);
+          if (geometry) {
+            baseFaceGeometries.push(geometry);
+          }
+        });
+        if (baseFaceGeometries.length) {
+          transforms.forEach((matrix) => {
+            baseFaceGeometries.forEach((geometry) => {
+              const patch = geometry.clone();
+              patch.applyMatrix4(matrix);
+              const mesh = new THREE.Mesh(patch, this.faceMaterial);
+              faceGroup.add(mesh);
+            });
+          });
+        }
+        baseFaceGeometries.forEach((geometry) => geometry.dispose());
+        if (faceGroup.children.length) {
+          group.add(faceGroup);
+        }
+      } else {
+        const facePositions = [];
+        transforms.forEach((matrix) => {
+          this.baseFaces.forEach((face) => {
+            face.keys.forEach((key) => {
+              const vertex = this._vectorFromKey(key);
+              if (vertex) {
+                vertex.applyMatrix4(matrix);
+                facePositions.push(vertex.x, vertex.y, vertex.z);
+              }
+            });
           });
         });
-      });
-      if (facePositions.length) {
-        const faceGeometry = new THREE.BufferGeometry();
-        faceGeometry.setAttribute('position', new THREE.Float32BufferAttribute(facePositions, 3));
-        faceGeometry.computeVertexNormals();
-        const mesh = new THREE.Mesh(faceGeometry, this.faceMaterial);
-        group.add(mesh);
+        if (facePositions.length) {
+          const faceGeometry = new THREE.BufferGeometry();
+          faceGeometry.setAttribute('position', new THREE.Float32BufferAttribute(facePositions, 3));
+          faceGeometry.computeVertexNormals();
+          const mesh = new THREE.Mesh(faceGeometry, this.faceMaterial);
+          group.add(mesh);
+        }
       }
     }
 
     if (this.baseVolumes && this.baseVolumes.length) {
-      const volumePositions = [];
-      transforms.forEach((matrix) => {
+      if (this.useCurvedSurfaces) {
+        const volumeGroup = new THREE.Group();
+        const baseVolumeGeometries = [];
         this.baseVolumes.forEach((volume) => {
-          const vertices = volume.keys.map((key) => this._vectorFromKey(key));
-          if (vertices.some((v) => !v)) {
-            return;
-          }
-          const transformed = vertices.map((vertex) => vertex.applyMatrix4(matrix));
-          const [pA, pB, pC, pD] = transformed;
+          const [kA, kB, kC, kD] = volume.keys;
           const faces = [
-            [pA, pB, pC],
-            [pA, pB, pD],
-            [pA, pC, pD],
-            [pB, pC, pD],
+            [kA, kB, kC],
+            [kA, kB, kD],
+            [kA, kC, kD],
+            [kB, kC, kD],
           ];
-          faces.forEach(([v1, v2, v3]) => {
-            volumePositions.push(v1.x, v1.y, v1.z, v2.x, v2.y, v2.z, v3.x, v3.y, v3.z);
+          faces.forEach((faceKeys) => {
+            const geometry = this._buildCurvedTriangleGeometryFromKeys(faceKeys, { curvatureScale: 1.1 });
+            if (geometry) {
+              baseVolumeGeometries.push(geometry);
+            }
           });
         });
-      });
-      if (volumePositions.length) {
-        const volumeGeometry = new THREE.BufferGeometry();
-        volumeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(volumePositions, 3));
-        volumeGeometry.computeVertexNormals();
-        const volumeMesh = new THREE.Mesh(volumeGeometry, this.volumeMaterial);
-        group.add(volumeMesh);
+        if (baseVolumeGeometries.length) {
+          transforms.forEach((matrix) => {
+            baseVolumeGeometries.forEach((geometry) => {
+              const patch = geometry.clone();
+              patch.applyMatrix4(matrix);
+              const mesh = new THREE.Mesh(patch, this.volumeMaterial);
+              volumeGroup.add(mesh);
+            });
+          });
+        }
+        baseVolumeGeometries.forEach((geometry) => geometry.dispose());
+        if (volumeGroup.children.length) {
+          group.add(volumeGroup);
+        }
+      } else {
+        const volumePositions = [];
+        transforms.forEach((matrix) => {
+          this.baseVolumes.forEach((volume) => {
+            const vertices = volume.keys.map((key) => this._vectorFromKey(key));
+            if (vertices.some((v) => !v)) {
+              return;
+            }
+            const transformed = vertices.map((vertex) => vertex.applyMatrix4(matrix));
+            const [pA, pB, pC, pD] = transformed;
+            const faces = [
+              [pA, pB, pC],
+              [pA, pB, pD],
+              [pA, pC, pD],
+              [pB, pC, pD],
+            ];
+            faces.forEach(([v1, v2, v3]) => {
+              volumePositions.push(v1.x, v1.y, v1.z, v2.x, v2.y, v2.z, v3.x, v3.y, v3.z);
+            });
+          });
+        });
+        if (volumePositions.length) {
+          const volumeGeometry = new THREE.BufferGeometry();
+          volumeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(volumePositions, 3));
+          volumeGeometry.computeVertexNormals();
+          const volumeMesh = new THREE.Mesh(volumeGeometry, this.volumeMaterial);
+          group.add(volumeMesh);
+        }
       }
     }
 
@@ -1519,6 +1693,7 @@ function init() {
   const showPointsEl = document.getElementById('toggle-points');
   const showLinesEl = document.getElementById('toggle-lines');
   const showCurvedLinesEl = document.getElementById('toggle-curved-lines');
+  const showCurvedSurfacesEl = document.getElementById('toggle-curved-surfaces');
   const gridDensityEl = document.getElementById('grid-density');
   const undoButton = document.getElementById('undo-button');
   const redoButton = document.getElementById('redo-button');
@@ -1673,6 +1848,14 @@ function init() {
     };
     showCurvedLinesEl.addEventListener('change', applyCurvedLines);
     applyCurvedLines();
+  }
+
+  if (showCurvedSurfacesEl) {
+    const applyCurvedSurfaces = () => {
+      app.updateCurvedSurfaces(showCurvedSurfacesEl.checked);
+    };
+    showCurvedSurfacesEl.addEventListener('change', applyCurvedSurfaces);
+    applyCurvedSurfaces();
   }
 
   if (gridDensityEl) {
