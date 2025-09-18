@@ -26,6 +26,8 @@ Ein exploratives, interaktives 3D-Projekt zur Umsetzung von Wilhelm Ostwalds Ide
   - Schraubsymmetrie (Rotation + Translation)  
 - ✅ Optionaler Kurvenmodus (Quadratic Bézier) für Linien  
 - ✅ Umschaltbare gewölbte Flächen und Tetraeder-Volumen auf Bézier-Basis  
+- ✅ Manuelle oder automatische Definition/Entfernung geschlossener Flächen & Tetraeder inkl. Hover-Highlight  
+- ✅ Erkennung regulärer Dreiecke/Tetraeder und farbliche Markierung  
 - ✅ Zufallsgenerator für neue Linienkonfigurationen  
 - ✅ Presets: Würfelrahmen, Tetraeder, Diagonalkreuz, Stern  
 - ✅ Automatische Erkennung geschlossener Flächen (Dreiecke) und Volumina (Tetraeder)  

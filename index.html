@@ -30,6 +30,13 @@
     </div>
 
     <div class="control-row">
+      <button id="close-face-button">Fläche schließen</button>
+      <button id="close-volume-button">Volumen schließen</button>
+      <label class="checkbox-inline"><input type="checkbox" id="toggle-show-closed" checked> Geschlossene Formen</label>
+      <label class="checkbox-inline"><input type="checkbox" id="toggle-auto-close"> Auto-Fläche</label>
+    </div>
+
+    <div class="control-row">
       <label for="grid-density">Punktdichte:</label>
       <input type="number" id="grid-density" min="1" max="12" step="1" value="1" title="1 = nur Eckpunkte, 2 = plus Mittelpunkt">
       <label class="checkbox-inline"><input type="checkbox" id="toggle-points" checked> Punkte</label>

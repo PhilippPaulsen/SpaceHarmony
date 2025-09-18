@@ -403,9 +403,13 @@ class RaumharmonikApp {
     this.pointMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
     this.activePointGeometry = new THREE.SphereGeometry(0.014, 16, 16);
     this.activePointMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    this.selectionPointMaterial = new THREE.MeshBasicMaterial({ color: 0x0077ff });
     this.lineMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
-    this.faceMaterial = new THREE.MeshStandardMaterial({ color: 0x888888, transparent: true, opacity: 0.15, side: THREE.DoubleSide });
-    this.volumeMaterial = new THREE.MeshStandardMaterial({ color: 0x888888, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
+    this.faceMaterial = new THREE.MeshStandardMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.22, side: THREE.DoubleSide });
+    this.faceRegularMaterial = new THREE.MeshStandardMaterial({ color: 0x33ff88, transparent: true, opacity: 0.28, side: THREE.DoubleSide, emissive: 0x0 });
+    this.volumeMaterial = new THREE.MeshStandardMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.18, side: THREE.DoubleSide });
+    this.volumeRegularMaterial = new THREE.MeshStandardMaterial({ color: 0x33ff88, transparent: true, opacity: 0.22, side: THREE.DoubleSide });
+    this.highlightMaterial = new THREE.MeshStandardMaterial({ color: 0xffff66, transparent: true, opacity: 0.4, side: THREE.DoubleSide, emissive: 0x333300 });
 
     this.useCurvedLines = false;
     this.curvedLineMaterial = new THREE.LineBasicMaterial({ color: 0x555555 });
@@ -433,6 +437,20 @@ class RaumharmonikApp {
     this.presets = [];
     this.faceCountElement = null;
     this.adjacencyGraph = new Map();
+    this.selectionBuffer = [];
+    this.selectedPointIndices = new Set();
+    this.manualFaces = new Map();
+    this.manualVolumes = new Map();
+    this.hiddenFaces = new Set();
+    this.hiddenVolumes = new Set();
+    this.showClosedForms = true;
+    this.autoCloseFaces = false;
+    this.pickableMeshes = [];
+    this.hoveredMesh = null;
+    this.hoveredOriginalMaterial = null;
+    this.hoveredType = null;
+    this.pointerDownHit = null;
+    this._keyboardHandler = (event) => this._onKeyDown(event);
 
     this._addCubeFrame();
     this._setupLighting();
@@ -440,6 +458,7 @@ class RaumharmonikApp {
     this.updateGrid(this.gridDivisions);
     this._onResize();
     window.addEventListener('resize', () => this._onResize());
+    window.addEventListener('keydown', this._keyboardHandler, { passive: false });
 
     this.renderer.setAnimationLoop(() => {
       this.controls.update();
@@ -468,6 +487,8 @@ class RaumharmonikApp {
     this.history = [];
     this.future = [];
     this.activePointIndex = null;
+    this._clearHover();
+    this.pointerDownHit = null;
     this._rebuildSymmetryObjects();
   }
 
@@ -520,6 +541,45 @@ class RaumharmonikApp {
 
   updateScrew(config) {
     this.symmetry.setScrew(config);
+    this._rebuildSymmetryObjects();
+  }
+
+  updateShowClosedForms(flag) {
+    this.showClosedForms = Boolean(flag);
+    this._rebuildSymmetryObjects();
+  }
+
+  updateAutoCloseFaces(flag) {
+    this.autoCloseFaces = Boolean(flag);
+  }
+
+  closeSelectedFace() {
+    const keys = this._getSelectionKeys(3);
+    if (keys.length !== 3) {
+      return;
+    }
+    const faceKey = this._faceKeyFromKeys(keys);
+    if (this._hasFace(faceKey)) {
+      return;
+    }
+    this._ensureSegmentsForKeys(keys);
+    this._commitManualFace(keys);
+    this._clearSelection();
+    this._rebuildSymmetryObjects();
+  }
+
+  closeSelectedVolume() {
+    const keys = this._getSelectionKeys(4);
+    if (keys.length !== 4) {
+      return;
+    }
+    const volumeKey = this._volumeKeyFromKeys(keys);
+    if (this._hasVolume(volumeKey)) {
+      return;
+    }
+    this._ensureSegmentsForKeys(keys);
+    this._commitManualVolume(keys);
+    this._clearSelection();
     this._rebuildSymmetryObjects();
   }
 
@@ -589,6 +649,14 @@ class RaumharmonikApp {
     return sorted.join('->');
   }
 
+  _faceKeyFromKeys(keys) {
+    return [...keys].sort().join('#');
+  }
+
+  _volumeKeyFromKeys(keys) {
+    return [...keys].sort().join('#');
+  }
+
   _createSegmentFromIndices(indexA, indexB) {
     if (indexA === indexB) {
       return null;
@@ -622,6 +690,233 @@ class RaumharmonikApp {
     };
     segment.key = this._segmentKey(pointA, pointB);
     return segment;
+  }
+
+  _addSelectionIndex(index) {
+    if (index === null || index === undefined) {
+      return;
+    }
+    const existing = this.selectionBuffer.indexOf(index);
+    if (existing !== -1) {
+      this.selectionBuffer.splice(existing, 1);
+    }
+    this.selectionBuffer.push(index);
+    this.selectedPointIndices.add(index);
+    // Prevent unbounded growth while keeping the most recent choices handy.
+    if (this.selectionBuffer.length > 16) {
+      const removed = this.selectionBuffer.shift();
+      if (!this.selectionBuffer.includes(removed)) {
+        this.selectedPointIndices.delete(removed);
+      }
+    }
+    if (this.autoCloseFaces && this.selectionBuffer.length >= 3) {
+      this._autoCloseFromSelection();
+    }
+  }
+
+  _removeSelectionIndex(index) {
+    const idx = this.selectionBuffer.indexOf(index);
+    if (idx !== -1) {
+      this.selectionBuffer.splice(idx, 1);
+    }
+    if (!this.selectionBuffer.includes(index)) {
+      this.selectedPointIndices.delete(index);
+    }
+  }
+
+  _clearSelection() {
+    this.selectionBuffer = [];
+    this.selectedPointIndices.clear();
+  }
+
+  _getSelectionKeys(limit) {
+    if (!limit || limit <= 0) {
+      return [];
+    }
+    const unique = [];
+    const seen = new Set();
+    for (let i = this.selectionBuffer.length - 1; i >= 0 && unique.length < limit; i -= 1) {
+      const index = this.selectionBuffer[i];
+      if (seen.has(index)) {
+        continue;
+      }
+      seen.add(index);
+      unique.push(index);
+    }
+    unique.reverse();
+    return unique.map((index) => {
+      const point = this.gridPoints[index];
+      return point ? this._pointKey(point) : null;
+    }).filter(Boolean);
+  }
+
+  _hasFace(faceKey, { includeHidden = false } = {}) {
+    if (!faceKey) {
+      return false;
+    }
+    if (this.manualFaces.has(faceKey)) {
+      return true;
+    }
+    if (includeHidden && this.hiddenFaces.has(faceKey)) {
+      return true;
+    }
+    return this.baseFaces.some((face) => face.key === faceKey);
+  }
+
+  _hasVolume(volumeKey, { includeHidden = false } = {}) {
+    if (!volumeKey) {
+      return false;
+    }
+    if (this.manualVolumes.has(volumeKey)) {
+      return true;
+    }
+    if (includeHidden && this.hiddenVolumes.has(volumeKey)) {
+      return true;
+    }
+    return this.baseVolumes.some((volume) => volume.key === volumeKey);
+  }
+
+  _autoCloseFromSelection() {
+    const keys = this._getSelectionKeys(3);
+    if (keys.length !== 3) {
+      return;
+    }
+    const faceKey = this._faceKeyFromKeys(keys);
+    if (this._hasFace(faceKey, { includeHidden: true })) {
+      return;
+    }
+    this.closeSelectedFace();
+  }
+
+  _ensureSegmentsForKeys(keys) {
+    const segmentsToAdd = [];
+    for (let i = 0; i < keys.length; i += 1) {
+      for (let j = i + 1; j < keys.length; j += 1) {
+        const keyA = keys[i];
+        const keyB = keys[j];
+        const segmentKey = this._segmentKeyFromKeys(keyA, keyB);
+        if (this.segmentLookup.has(segmentKey)) {
+          continue;
+        }
+        const segment = this._createSegmentFromKeys(keyA, keyB);
+        if (segment) {
+          segmentsToAdd.push(segment);
+        }
+      }
+    }
+    if (segmentsToAdd.length) {
+      this._commitSegments(segmentsToAdd);
+    }
+  }
+
+  _commitManualFace(keys, { recordHistory = true } = {}) {
+    const faceKey = this._faceKeyFromKeys(keys);
+    const faceData = {
+      key: faceKey,
+      keys: keys.slice(),
+      source: 'manual',
+    };
+    faceData.isRegular = this._isEquilateralFace(keys);
+    this.manualFaces.set(faceKey, faceData);
+    this.hiddenFaces.delete(faceKey);
+    if (recordHistory) {
+      this._pushHistory({ type: 'addManualFace', faceKey, face: { ...faceData } });
+      this.future = [];
+    }
+    this._updateFaces();
+  }
+
+  _commitManualVolume(keys, { recordHistory = true } = {}) {
+    const volumeKey = this._volumeKeyFromKeys(keys);
+    const faceKeys = this._volumeFaceCombinations(keys).map((combo) => combo.slice());
+    const volumeData = {
+      key: volumeKey,
+      keys: keys.slice(),
+      faceKeys,
+      source: 'manual',
+    };
+    volumeData.isRegular = this._isRegularTetrahedron(keys);
+    this.manualVolumes.set(volumeKey, volumeData);
+    this.hiddenVolumes.delete(volumeKey);
+    if (recordHistory) {
+      this._pushHistory({ type: 'addManualVolume', volumeKey, volume: { ...volumeData, faceKeys: faceKeys.map((fk) => fk.slice()) } });
+      this.future = [];
+    }
+    this._updateFaces();
+  }
+
+  _volumeFaceCombinations(keys) {
+    if (!Array.isArray(keys) || keys.length !== 4) {
+      return [];
+    }
+    const [a, b, c, d] = keys;
+    return [
+      [a, b, c],
+      [a, b, d],
+      [a, c, d],
+      [b, c, d],
+    ];
+  }
+
+  _lengthBetweenKeys(keyA, keyB) {
+    const pA = this._vectorFromKey(keyA);
+    const pB = this._vectorFromKey(keyB);
+    if (!pA || !pB) {
+      return 0;
+    }
+    return pA.distanceTo(pB);
+  }
+
+  _isEquilateralFace(keys) {
+    if (!Array.isArray(keys) || keys.length !== 3) {
+      return false;
+    }
+    const lengths = [
+      this._lengthBetweenKeys(keys[0], keys[1]),
+      this._lengthBetweenKeys(keys[1], keys[2]),
+      this._lengthBetweenKeys(keys[2], keys[0]),
+    ];
+    const avg = lengths.reduce((sum, value) => sum + value, 0) / lengths.length;
+    if (avg < 1e-6) {
+      return false;
+    }
+    const tolerance = Math.max(avg * 0.02, 1e-4);
+    return lengths.every((value) => Math.abs(value - avg) <= tolerance);
+  }
+
+  _isRegularTetrahedron(keys) {
+    if (!Array.isArray(keys) || keys.length !== 4) {
+      return false;
+    }
+    const edgePairs = [
+      [keys[0], keys[1]],
+      [keys[0], keys[2]],
+      [keys[0], keys[3]],
+      [keys[1], keys[2]],
+      [keys[1], keys[3]],
+      [keys[2], keys[3]],
+    ];
+    const lengths = edgePairs.map(([a, b]) => this._lengthBetweenKeys(a, b));
+    const avg = lengths.reduce((sum, value) => sum + value, 0) / lengths.length;
+    if (avg < 1e-6) {
+      return false;
+    }
+    const tolerance = Math.max(avg * 0.025, 1e-4);
+    const edgesEqual = lengths.every((value) => Math.abs(value - avg) <= tolerance);
+    if (!edgesEqual) {
+      return false;
+    }
+    // Volume check to avoid nearly flat tetrahedra.
+    const points = keys.map((key) => this._vectorFromKey(key));
+    if (points.some((p) => !p)) {
+      return false;
+    }
+    const [p0, p1, p2, p3] = points;
+    const v1 = new THREE.Vector3().subVectors(p1, p0);
+    const v2 = new THREE.Vector3().subVectors(p2, p0);
+    const v3 = new THREE.Vector3().subVectors(p3, p0);
+    const volume = Math.abs(v1.dot(new THREE.Vector3().crossVectors(v2, v3))) / 6;
+    return volume > 1e-6;
   }
 
   _buildCurvedTriangleGeometryFromKeys(keys, options = {}) {
@@ -731,6 +1026,27 @@ class RaumharmonikApp {
     return point;
   }
 
+  _buildFlatTriangleGeometryFromKeys(keys) {
+    if (!Array.isArray(keys) || keys.length !== 3) {
+      return null;
+    }
+    const vertices = keys.map((key) => this._vectorFromKey(key));
+    if (vertices.some((v) => !v)) {
+      return null;
+    }
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(9);
+    vertices.forEach((vertex, idx) => {
+      positions[idx * 3] = vertex.x;
+      positions[idx * 3 + 1] = vertex.y;
+      positions[idx * 3 + 2] = vertex.z;
+    });
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setIndex([0, 1, 2]);
+    geometry.computeVertexNormals();
+    return geometry;
+  }
+
   _addSegments(segments) {
     const added = [];
     segments.forEach((segment) => {
@@ -804,6 +1120,56 @@ class RaumharmonikApp {
           this._removeSegments(action.segments);
         } else {
           this._addSegments(action.segments);
+        }
+        break;
+      case 'addManualFace':
+        if (direction === 'undo') {
+          this._removeFaceByKey(action.faceKey, { recordHistory: false });
+        } else if (action.face && action.face.keys) {
+          this._commitManualFace(action.face.keys, { recordHistory: false });
+        }
+        break;
+      case 'removeManualFace':
+        if (direction === 'undo' && action.face && action.face.keys) {
+          this._commitManualFace(action.face.keys, { recordHistory: false });
+        } else if (direction === 'redo') {
+          this._removeFaceByKey(action.faceKey, { recordHistory: false });
+        }
+        break;
+      case 'hideFace':
+        if (direction === 'undo') {
+          this.hiddenFaces.delete(action.faceKey);
+          this._updateFaces();
+          this._rebuildSymmetryObjects();
+        } else {
+          this.hiddenFaces.add(action.faceKey);
+          this._updateFaces();
+          this._rebuildSymmetryObjects();
+        }
+        break;
+      case 'addManualVolume':
+        if (direction === 'undo') {
+          this._removeVolumeByKey(action.volumeKey, { recordHistory: false });
+        } else if (action.volume && action.volume.keys) {
+          this._commitManualVolume(action.volume.keys, { recordHistory: false });
+        }
+        break;
+      case 'removeManualVolume':
+        if (direction === 'undo' && action.volume && action.volume.keys) {
+          this._commitManualVolume(action.volume.keys, { recordHistory: false });
+        } else if (direction === 'redo') {
+          this._removeVolumeByKey(action.volumeKey, { recordHistory: false });
+        }
+        break;
+      case 'hideVolume':
+        if (direction === 'undo') {
+          this.hiddenVolumes.delete(action.volumeKey);
+          this._updateFaces();
+          this._rebuildSymmetryObjects();
+        } else {
+          this.hiddenVolumes.add(action.volumeKey);
+          this._updateFaces();
+          this._rebuildSymmetryObjects();
         }
         break;
       default:
@@ -1047,137 +1413,210 @@ class RaumharmonikApp {
   }
 
   _updateFaces() {
-    this.baseFaces = [];
-    if (this.baseSegments.length < 3) {
-      this.adjacencyGraph = new Map();
-      this.baseVolumes = [];
-      this._updateFaceCountDisplay();
-      return;
-    }
-    const adjacency = new Map();
-    const addEdge = (a, b) => {
-      if (!adjacency.has(a)) {
-        adjacency.set(a, new Set());
-      }
-      adjacency.get(a).add(b);
-    };
-    this.baseSegments.forEach((segment) => {
-      const keyA = this._pointKey(segment.start);
-      const keyB = this._pointKey(segment.end);
-      addEdge(keyA, keyB);
-      addEdge(keyB, keyA);
-    });
-    const faceSet = new Set();
-    adjacency.forEach((neighborsA, keyA) => {
-      neighborsA.forEach((keyB) => {
-        if (keyB <= keyA) {
-          return;
+    const detectedFaces = new Map();
+    if (this.baseSegments.length >= 3) {
+      const adjacency = new Map();
+      const addEdge = (a, b) => {
+        if (!adjacency.has(a)) {
+          adjacency.set(a, new Set());
         }
-        const neighborsB = adjacency.get(keyB);
-        if (!neighborsB) {
-          return;
-        }
-        neighborsB.forEach((keyC) => {
-          if (keyC <= keyB || keyC === keyA) {
+        adjacency.get(a).add(b);
+      };
+      this.baseSegments.forEach((segment) => {
+        const keyA = this._pointKey(segment.start);
+        const keyB = this._pointKey(segment.end);
+        addEdge(keyA, keyB);
+        addEdge(keyB, keyA);
+      });
+      const faceSet = new Set();
+      adjacency.forEach((neighborsA, keyA) => {
+        neighborsA.forEach((keyB) => {
+          if (keyB <= keyA) {
             return;
           }
-          const neighborsC = adjacency.get(keyC);
-          if (!neighborsC || !neighborsC.has(keyA)) {
+          const neighborsB = adjacency.get(keyB);
+          if (!neighborsB) {
             return;
           }
-          const faceKey = [keyA, keyB, keyC].sort().join('#');
-          if (faceSet.has(faceKey)) {
-            return;
-          }
-          const pA = this._vectorFromKey(keyA);
-          const pB = this._vectorFromKey(keyB);
-          const pC = this._vectorFromKey(keyC);
-          if (!pA || !pB || !pC) {
-            return;
-          }
-          const ab = new THREE.Vector3().subVectors(pB, pA);
-          const ac = new THREE.Vector3().subVectors(pC, pA);
-          const areaVec = new THREE.Vector3().crossVectors(ab, ac);
-          if (areaVec.lengthSq() < 1e-6) {
-            return;
-          }
-          faceSet.add(faceKey);
-          this.baseFaces.push({ keys: [keyA, keyB, keyC] });
+          neighborsB.forEach((keyC) => {
+            if (keyC <= keyB || keyC === keyA) {
+              return;
+            }
+            const neighborsC = adjacency.get(keyC);
+            if (!neighborsC || !neighborsC.has(keyA)) {
+              return;
+            }
+            const sortedKeys = [keyA, keyB, keyC].sort();
+            const faceKey = sortedKeys.join('#');
+            if (faceSet.has(faceKey) || this.hiddenFaces.has(faceKey)) {
+              return;
+            }
+            const pA = this._vectorFromKey(sortedKeys[0]);
+            const pB = this._vectorFromKey(sortedKeys[1]);
+            const pC = this._vectorFromKey(sortedKeys[2]);
+            if (!pA || !pB || !pC) {
+              return;
+            }
+            const ab = new THREE.Vector3().subVectors(pB, pA);
+            const ac = new THREE.Vector3().subVectors(pC, pA);
+            const areaVec = new THREE.Vector3().crossVectors(ab, ac);
+            if (areaVec.lengthSq() < 1e-6) {
+              return;
+            }
+            faceSet.add(faceKey);
+            if (!this.manualFaces.has(faceKey)) {
+              detectedFaces.set(faceKey, {
+                key: faceKey,
+                keys: sortedKeys,
+                source: 'auto',
+                isRegular: this._isEquilateralFace(sortedKeys),
+              });
+            }
+          });
         });
       });
+      this.adjacencyGraph = adjacency;
+    } else {
+      this.adjacencyGraph = new Map();
+    }
+
+    const combinedFaces = [];
+    detectedFaces.forEach((face) => {
+      combinedFaces.push(face);
     });
 
-    this.adjacencyGraph = adjacency;
-    this._updateVolumes(adjacency);
+    this.manualFaces.forEach((face, key) => {
+      if (this.hiddenFaces.has(key)) {
+        return;
+      }
+      if (!face || !Array.isArray(face.keys) || face.keys.length !== 3) {
+        this.manualFaces.delete(key);
+        return;
+      }
+      const valid = face.keys.every((pointKey) => this.pointLookup.has(pointKey));
+      if (!valid) {
+        this.manualFaces.delete(key);
+        return;
+      }
+      const isRegular = this._isEquilateralFace(face.keys);
+      face.isRegular = isRegular;
+      const enriched = {
+        key,
+        keys: face.keys.slice(),
+        source: 'manual',
+        isRegular,
+      };
+      combinedFaces.push(enriched);
+    });
+
+    this.baseFaces = combinedFaces;
+    this._updateVolumes(this.adjacencyGraph);
   }
 
   _updateVolumes(adjacency) {
-    this.baseVolumes = [];
-    if (!adjacency || this.baseFaces.length < 4) {
-      return;
-    }
-    const volumeSet = new Set();
-    const segmentSet = new Set(this.baseSegments.map((seg) => seg.key));
-    const insertVolume = (keys) => {
-      const sorted = [...keys].sort();
-      const key = sorted.join('#');
-      if (volumeSet.has(key)) {
-        return;
-      }
-      const [keyA, keyB, keyC, keyD] = keys;
-      const combos = [
-        [keyA, keyB],
-        [keyA, keyC],
-        [keyA, keyD],
-        [keyB, keyC],
-        [keyB, keyD],
-        [keyC, keyD],
-      ];
-      const missingEdge = combos.some(([a, b]) => !segmentSet.has(this._segmentKeyFromKeys(a, b)));
-      if (missingEdge) {
-        return;
-      }
-      const pA = this._vectorFromKey(keyA);
-      const pB = this._vectorFromKey(keyB);
-      const pC = this._vectorFromKey(keyC);
-      const pD = this._vectorFromKey(keyD);
-      if (!pA || !pB || !pC || !pD) {
-        return;
-      }
-      const ab = new THREE.Vector3().subVectors(pB, pA);
-      const ac = new THREE.Vector3().subVectors(pC, pA);
-      const ad = new THREE.Vector3().subVectors(pD, pA);
-      const triple = Math.abs(ab.dot(new THREE.Vector3().crossVectors(ac, ad))) / 6;
-      if (triple < 1e-6) {
-        return;
-      }
-      volumeSet.add(key);
-      this.baseVolumes.push({ keys: [keyA, keyB, keyC, keyD] });
-    };
+    const combinedVolumes = [];
+    const detectedVolumes = new Map();
+    if (adjacency && this.baseFaces.length >= 4) {
+      const segmentSet = new Set(this.baseSegments.map((seg) => seg.key));
+      const volumeSet = new Set();
+      const insertVolume = (keys) => {
+        const sorted = [...keys].sort();
+        const volumeKey = sorted.join('#');
+        if (volumeSet.has(volumeKey) || this.hiddenVolumes.has(volumeKey)) {
+          return;
+        }
+        const combos = [
+          [sorted[0], sorted[1]],
+          [sorted[0], sorted[2]],
+          [sorted[0], sorted[3]],
+          [sorted[1], sorted[2]],
+          [sorted[1], sorted[3]],
+          [sorted[2], sorted[3]],
+        ];
+        const missingEdge = combos.some(([a, b]) => !segmentSet.has(this._segmentKeyFromKeys(a, b)));
+        if (missingEdge) {
+          return;
+        }
+        const points = sorted.map((key) => this._vectorFromKey(key));
+        if (points.some((p) => !p)) {
+          return;
+        }
+        const [pA, pB, pC, pD] = points;
+        const ab = new THREE.Vector3().subVectors(pB, pA);
+        const ac = new THREE.Vector3().subVectors(pC, pA);
+        const ad = new THREE.Vector3().subVectors(pD, pA);
+        const triple = Math.abs(ab.dot(new THREE.Vector3().crossVectors(ac, ad))) / 6;
+        if (triple < 1e-6) {
+          return;
+        }
+        volumeSet.add(volumeKey);
+        if (!this.manualVolumes.has(volumeKey)) {
+          detectedVolumes.set(volumeKey, {
+            key: volumeKey,
+            keys: sorted,
+            faceKeys: this._volumeFaceCombinations(sorted).map((combo) => combo.slice()),
+            source: 'auto',
+            isRegular: this._isRegularTetrahedron(sorted),
+          });
+        }
+      };
 
-    this.baseFaces.forEach((face) => {
-      const [keyA, keyB, keyC] = face.keys;
-      const neighborsA = adjacency.get(keyA);
-      const neighborsB = adjacency.get(keyB);
-      const neighborsC = adjacency.get(keyC);
-      if (!neighborsA || !neighborsB || !neighborsC) {
+      this.baseFaces.forEach((face) => {
+        const [keyA, keyB, keyC] = face.keys;
+        const neighborsA = adjacency.get(keyA);
+        const neighborsB = adjacency.get(keyB);
+        const neighborsC = adjacency.get(keyC);
+        if (!neighborsA || !neighborsB || !neighborsC) {
+          return;
+        }
+        neighborsA.forEach((keyD) => {
+          if (keyD === keyA || keyD === keyB || keyD === keyC) {
+            return;
+          }
+          if (!neighborsB.has(keyD) || !neighborsC.has(keyD)) {
+            return;
+          }
+          const sorted = [keyA, keyB, keyC, keyD].sort();
+          // Ensure deterministic ordering to avoid duplicates
+          if (sorted[3] !== keyD) {
+            return;
+          }
+          insertVolume([keyA, keyB, keyC, keyD]);
+        });
+      });
+    }
+
+    detectedVolumes.forEach((volume) => {
+      combinedVolumes.push(volume);
+    });
+
+    this.manualVolumes.forEach((volume, key) => {
+      if (this.hiddenVolumes.has(key)) {
         return;
       }
-      neighborsA.forEach((keyD) => {
-        if (keyD === keyA || keyD === keyB || keyD === keyC) {
-          return;
-        }
-        if (!neighborsB.has(keyD) || !neighborsC.has(keyD)) {
-          return;
-        }
-        const sorted = [keyA, keyB, keyC, keyD].sort();
-        // Ensure deterministic ordering to avoid duplicates
-        if (sorted[3] !== keyD) {
-          return;
-        }
-        insertVolume([keyA, keyB, keyC, keyD]);
+      if (!volume || !Array.isArray(volume.keys) || volume.keys.length !== 4) {
+        this.manualVolumes.delete(key);
+        return;
+      }
+      const valid = volume.keys.every((pointKey) => this.pointLookup.has(pointKey));
+      if (!valid) {
+        this.manualVolumes.delete(key);
+        return;
+      }
+      const faceKeys = this._volumeFaceCombinations(volume.keys).map((combo) => combo.slice());
+      const isRegular = this._isRegularTetrahedron(volume.keys);
+      volume.isRegular = isRegular;
+      combinedVolumes.push({
+        key,
+        keys: volume.keys.slice(),
+        faceKeys,
+        source: 'manual',
+        isRegular,
       });
     });
+
+    this.baseVolumes = combinedVolumes;
+    this._updateFaceCountDisplay();
   }
 
   _updateFaceCountDisplay() {
@@ -1199,6 +1638,11 @@ class RaumharmonikApp {
     this.baseFaces = [];
     this.baseVolumes = [];
     this.adjacencyGraph = new Map();
+    this.manualFaces.clear();
+    this.manualVolumes.clear();
+    this.hiddenFaces.clear();
+    this.hiddenVolumes.clear();
+    this._clearSelection();
     this._updateFaces();
     this._updateFaceCountDisplay();
   }
@@ -1318,6 +1762,7 @@ class RaumharmonikApp {
     if (event.button !== 0) {
       return;
     }
+    this.pointerDownHit = this._pickSceneIntersection(event);
     this.pointerDown = true;
     this.dragging = false;
     this.controls.autoRotate = false;
@@ -1325,6 +1770,7 @@ class RaumharmonikApp {
   }
 
   _onPointerMove(event) {
+    this._handleHover(event);
     if (!this.pointerDown) {
       return;
     }
@@ -1346,6 +1792,15 @@ class RaumharmonikApp {
       this.controls.autoRotate = true;
       return;
     }
+    const hit = this._pickSceneIntersection(event);
+    if (hit && this.pointerDownHit && hit.object === this.pointerDownHit.object) {
+      if (this._handleShapeClick(hit)) {
+        this.pointerDownHit = null;
+        this.controls.autoRotate = true;
+        return;
+      }
+    }
+    this.pointerDownHit = null;
     this._registerPointFromEvent(event);
     this.controls.autoRotate = true;
   }
@@ -1354,6 +1809,8 @@ class RaumharmonikApp {
     this.pointerDown = false;
     this.dragging = false;
     this.controls.autoRotate = true;
+    this.pointerDownHit = null;
+    this._clearHover();
   }
 
   _registerPointFromEvent(event) {
@@ -1374,6 +1831,149 @@ class RaumharmonikApp {
 
     if (pointIndex !== null) {
       this._handlePointSelection(pointIndex);
+    }
+  }
+
+  _pickSceneIntersection(event) {
+    if (!this.pickableMeshes || !this.pickableMeshes.length) {
+      return null;
+    }
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const intersects = this.raycaster.intersectObjects(this.pickableMeshes, false);
+    if (!intersects.length) {
+      return null;
+    }
+    const hit = intersects[0];
+    return {
+      object: hit.object,
+      data: hit.object ? hit.object.userData || {} : {},
+    };
+  }
+
+  _handleHover(event) {
+    if (!event) {
+      return;
+    }
+    if (!this.pickableMeshes.length) {
+      this._clearHover();
+      return;
+    }
+    const hit = this._pickSceneIntersection(event);
+    if (!hit || !hit.data || !hit.data.type) {
+      this._clearHover();
+      return;
+    }
+    if (this.hoveredMesh === hit.object) {
+      return;
+    }
+    this._clearHover();
+    this.hoveredMesh = hit.object;
+    this.hoveredOriginalMaterial = hit.object.material;
+    this.hoveredType = hit.data.type;
+    this.hoveredMesh.material = this.highlightMaterial;
+  }
+
+  _clearHover() {
+    if (this.hoveredMesh && this.hoveredOriginalMaterial) {
+      this.hoveredMesh.material = this.hoveredOriginalMaterial;
+    }
+    this.hoveredMesh = null;
+    this.hoveredOriginalMaterial = null;
+    this.hoveredType = null;
+  }
+
+  _handleShapeClick(hit) {
+    if (!hit || !hit.data || !hit.data.type) {
+      return false;
+    }
+    let handled = false;
+    if (hit.data.type === 'face' && hit.data.faceKey) {
+      handled = this._removeFaceByKey(hit.data.faceKey);
+    }
+    if (hit.data.type === 'volumeFace' && hit.data.volumeKey) {
+      handled = this._removeVolumeByKey(hit.data.volumeKey) || handled;
+    }
+    if (handled) {
+      this._clearHover();
+    }
+    return handled;
+  }
+
+  _removeFaceByKey(faceKey, { recordHistory = true } = {}) {
+    if (!faceKey) {
+      return false;
+    }
+    let removed = false;
+    if (this.manualFaces.has(faceKey)) {
+      const stored = this.manualFaces.get(faceKey);
+      if (recordHistory) {
+        this._pushHistory({ type: 'removeManualFace', faceKey, face: { ...stored, keys: stored.keys.slice() } });
+        this.future = [];
+      }
+      this.manualFaces.delete(faceKey);
+      removed = true;
+    } else if (!this.hiddenFaces.has(faceKey)) {
+      this.hiddenFaces.add(faceKey);
+      if (recordHistory) {
+        this._pushHistory({ type: 'hideFace', faceKey });
+        this.future = [];
+      }
+      removed = true;
+    }
+    if (removed) {
+      this._updateFaces();
+      this._rebuildSymmetryObjects();
+    }
+    return removed;
+  }
+
+  _removeVolumeByKey(volumeKey, { recordHistory = true } = {}) {
+    if (!volumeKey) {
+      return false;
+    }
+    let removed = false;
+    if (this.manualVolumes.has(volumeKey)) {
+      const stored = this.manualVolumes.get(volumeKey);
+      if (recordHistory) {
+        const clonedFaceKeys = stored.faceKeys ? stored.faceKeys.map((fk) => fk.slice()) : this._volumeFaceCombinations(stored.keys).map((fk) => fk.slice());
+        this._pushHistory({ type: 'removeManualVolume', volumeKey, volume: { ...stored, keys: stored.keys.slice(), faceKeys: clonedFaceKeys } });
+        this.future = [];
+      }
+      this.manualVolumes.delete(volumeKey);
+      removed = true;
+    } else if (!this.hiddenVolumes.has(volumeKey)) {
+      this.hiddenVolumes.add(volumeKey);
+      if (recordHistory) {
+        this._pushHistory({ type: 'hideVolume', volumeKey });
+        this.future = [];
+      }
+      removed = true;
+    }
+    if (removed) {
+      this._updateFaces();
+      this._rebuildSymmetryObjects();
+    }
+    return removed;
+  }
+
+  _onKeyDown(event) {
+    if (!event) {
+      return;
+    }
+    const meta = event.metaKey || event.ctrlKey;
+    if (!meta) {
+      return;
+    }
+    if (event.key.toLowerCase() === 'z') {
+      event.preventDefault();
+      if (event.shiftKey) {
+        this.redoLastAction();
+      } else {
+        this.undoLastAction();
+      }
     }
   }
 
@@ -1417,11 +2017,13 @@ class RaumharmonikApp {
 
     if (this.activePointIndex === null) {
       this.activePointIndex = index;
+      this._addSelectionIndex(index);
       this._rebuildSymmetryObjects();
       return;
     }
 
     if (this.activePointIndex === index) {
+      this._removeSelectionIndex(index);
       this.activePointIndex = null;
       this._rebuildSymmetryObjects();
       return;
@@ -1431,7 +2033,7 @@ class RaumharmonikApp {
     if (segment) {
       this._commitSegments([segment]);
     }
-
+    this._addSelectionIndex(index);
     this.activePointIndex = null;
     if (!segment) {
       this._rebuildSymmetryObjects();
@@ -1449,6 +2051,9 @@ class RaumharmonikApp {
       this.symmetryGroup = null;
     }
 
+    this._clearHover();
+    this.pickableMeshes = [];
+    this.pointerDownHit = null;
     const transforms = this.symmetry.getTransforms();
     const group = new THREE.Group();
     if (this.showPoints) {
@@ -1471,6 +2076,31 @@ class RaumharmonikApp {
           highlightGroup.add(marker);
         });
         group.add(highlightGroup);
+      }
+
+      if (this.selectedPointIndices.size) {
+        const selectionGroup = new THREE.Group();
+        const indices = Array.from(this.selectedPointIndices);
+        if (this.activePointIndex !== null) {
+          const idx = indices.indexOf(this.activePointIndex);
+          if (idx !== -1) {
+            indices.splice(idx, 1);
+          }
+        }
+        transforms.forEach((matrix) => {
+          indices.forEach((index) => {
+            const basePoint = this.gridPoints[index];
+            if (!basePoint) {
+              return;
+            }
+            const marker = new THREE.Mesh(this.pointGeometry, this.selectionPointMaterial);
+            marker.position.copy(basePoint).applyMatrix4(matrix);
+            selectionGroup.add(marker);
+          });
+        });
+        if (selectionGroup.children.length) {
+          group.add(selectionGroup);
+        }
       }
     }
 
@@ -1533,114 +2163,85 @@ class RaumharmonikApp {
       }
     }
 
-    if (this.baseFaces.length) {
-      if (this.useCurvedSurfaces) {
-        const faceGroup = new THREE.Group();
-        const baseFaceGeometries = [];
-        this.baseFaces.forEach((face) => {
-          const geometry = this._buildCurvedTriangleGeometryFromKeys(face.keys);
-          if (geometry) {
-            baseFaceGeometries.push(geometry);
-          }
-        });
-        if (baseFaceGeometries.length) {
-          transforms.forEach((matrix) => {
-            baseFaceGeometries.forEach((geometry) => {
-              const patch = geometry.clone();
-              patch.applyMatrix4(matrix);
-              const mesh = new THREE.Mesh(patch, this.faceMaterial);
-              faceGroup.add(mesh);
-            });
-          });
+    if (this.showClosedForms && this.baseFaces.length) {
+      const faceGroup = new THREE.Group();
+      const baseEntries = [];
+      this.baseFaces.forEach((face) => {
+        let geometry;
+        if (this.useCurvedSurfaces) {
+          geometry = this._buildCurvedTriangleGeometryFromKeys(face.keys);
+        } else {
+          geometry = this._buildFlatTriangleGeometryFromKeys(face.keys);
         }
-        baseFaceGeometries.forEach((geometry) => geometry.dispose());
-        if (faceGroup.children.length) {
-          group.add(faceGroup);
+        if (geometry) {
+          baseEntries.push({ geometry, face });
         }
-      } else {
-        const facePositions = [];
+      });
+      if (baseEntries.length) {
         transforms.forEach((matrix) => {
-          this.baseFaces.forEach((face) => {
-            face.keys.forEach((key) => {
-              const vertex = this._vectorFromKey(key);
-              if (vertex) {
-                vertex.applyMatrix4(matrix);
-                facePositions.push(vertex.x, vertex.y, vertex.z);
-              }
-            });
+          baseEntries.forEach(({ geometry, face }) => {
+            const patch = geometry.clone();
+            patch.applyMatrix4(matrix);
+            patch.computeVertexNormals();
+            const material = face.isRegular ? this.faceRegularMaterial : this.faceMaterial;
+            const mesh = new THREE.Mesh(patch, material);
+            mesh.userData = {
+              type: 'face',
+              faceKey: face.key,
+              source: face.source,
+            };
+            this.pickableMeshes.push(mesh);
+            faceGroup.add(mesh);
           });
         });
-        if (facePositions.length) {
-          const faceGeometry = new THREE.BufferGeometry();
-          faceGeometry.setAttribute('position', new THREE.Float32BufferAttribute(facePositions, 3));
-          faceGeometry.computeVertexNormals();
-          const mesh = new THREE.Mesh(faceGeometry, this.faceMaterial);
-          group.add(mesh);
-        }
+      }
+      baseEntries.forEach(({ geometry }) => geometry.dispose());
+      if (faceGroup.children.length) {
+        group.add(faceGroup);
       }
     }
 
-    if (this.baseVolumes && this.baseVolumes.length) {
-      if (this.useCurvedSurfaces) {
-        const volumeGroup = new THREE.Group();
-        const baseVolumeGeometries = [];
-        this.baseVolumes.forEach((volume) => {
-          const [kA, kB, kC, kD] = volume.keys;
-          const faces = [
-            [kA, kB, kC],
-            [kA, kB, kD],
-            [kA, kC, kD],
-            [kB, kC, kD],
-          ];
-          faces.forEach((faceKeys) => {
-            const geometry = this._buildCurvedTriangleGeometryFromKeys(faceKeys, { curvatureScale: 1.1 });
-            if (geometry) {
-              baseVolumeGeometries.push(geometry);
-            }
-          });
+    if (this.showClosedForms && this.baseVolumes && this.baseVolumes.length) {
+      const volumeGroup = new THREE.Group();
+      const baseEntries = [];
+      this.baseVolumes.forEach((volume) => {
+        if (!volume.faceKeys || !volume.faceKeys.length) {
+          return;
+        }
+        volume.faceKeys.forEach((faceKeys) => {
+          let geometry;
+          if (this.useCurvedSurfaces) {
+            geometry = this._buildCurvedTriangleGeometryFromKeys(faceKeys, { curvatureScale: 1.1 });
+          } else {
+            geometry = this._buildFlatTriangleGeometryFromKeys(faceKeys);
+          }
+          if (geometry) {
+            baseEntries.push({ geometry, volume, faceKeys });
+          }
         });
-        if (baseVolumeGeometries.length) {
-          transforms.forEach((matrix) => {
-            baseVolumeGeometries.forEach((geometry) => {
-              const patch = geometry.clone();
-              patch.applyMatrix4(matrix);
-              const mesh = new THREE.Mesh(patch, this.volumeMaterial);
-              volumeGroup.add(mesh);
-            });
-          });
-        }
-        baseVolumeGeometries.forEach((geometry) => geometry.dispose());
-        if (volumeGroup.children.length) {
-          group.add(volumeGroup);
-        }
-      } else {
-        const volumePositions = [];
+      });
+      if (baseEntries.length) {
         transforms.forEach((matrix) => {
-          this.baseVolumes.forEach((volume) => {
-            const vertices = volume.keys.map((key) => this._vectorFromKey(key));
-            if (vertices.some((v) => !v)) {
-              return;
-            }
-            const transformed = vertices.map((vertex) => vertex.applyMatrix4(matrix));
-            const [pA, pB, pC, pD] = transformed;
-            const faces = [
-              [pA, pB, pC],
-              [pA, pB, pD],
-              [pA, pC, pD],
-              [pB, pC, pD],
-            ];
-            faces.forEach(([v1, v2, v3]) => {
-              volumePositions.push(v1.x, v1.y, v1.z, v2.x, v2.y, v2.z, v3.x, v3.y, v3.z);
-            });
+          baseEntries.forEach(({ geometry, volume, faceKeys }) => {
+            const patch = geometry.clone();
+            patch.applyMatrix4(matrix);
+            patch.computeVertexNormals();
+            const material = volume.isRegular ? this.volumeRegularMaterial : this.volumeMaterial;
+            const mesh = new THREE.Mesh(patch, material);
+            mesh.userData = {
+              type: 'volumeFace',
+              volumeKey: volume.key,
+              faceKey: faceKeys.slice().sort().join('#'),
+              source: volume.source,
+            };
+            this.pickableMeshes.push(mesh);
+            volumeGroup.add(mesh);
           });
         });
-        if (volumePositions.length) {
-          const volumeGeometry = new THREE.BufferGeometry();
-          volumeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(volumePositions, 3));
-          volumeGeometry.computeVertexNormals();
-          const volumeMesh = new THREE.Mesh(volumeGeometry, this.volumeMaterial);
-          group.add(volumeMesh);
-        }
+      }
+      baseEntries.forEach(({ geometry }) => geometry.dispose());
+      if (volumeGroup.children.length) {
+        group.add(volumeGroup);
       }
     }
 
@@ -1694,6 +2295,10 @@ function init() {
   const showLinesEl = document.getElementById('toggle-lines');
   const showCurvedLinesEl = document.getElementById('toggle-curved-lines');
   const showCurvedSurfacesEl = document.getElementById('toggle-curved-surfaces');
+  const closeFaceButton = document.getElementById('close-face-button');
+  const closeVolumeButton = document.getElementById('close-volume-button');
+  const showClosedEl = document.getElementById('toggle-show-closed');
+  const autoCloseEl = document.getElementById('toggle-auto-close');
   const gridDensityEl = document.getElementById('grid-density');
   const undoButton = document.getElementById('undo-button');
   const redoButton = document.getElementById('redo-button');
@@ -1721,6 +2326,14 @@ function init() {
 
   if (completeShapesButton) {
     completeShapesButton.addEventListener('click', () => app.completeSurfacesAndVolumes());
+  }
+
+  if (closeFaceButton) {
+    closeFaceButton.addEventListener('click', () => app.closeSelectedFace());
+  }
+
+  if (closeVolumeButton) {
+    closeVolumeButton.addEventListener('click', () => app.closeSelectedVolume());
   }
 
   if (presetSelectEl) {
@@ -1856,6 +2469,22 @@ function init() {
     };
     showCurvedSurfacesEl.addEventListener('change', applyCurvedSurfaces);
     applyCurvedSurfaces();
+  }
+
+  if (showClosedEl) {
+    const applyShowClosed = () => {
+      app.updateShowClosedForms(showClosedEl.checked);
+    };
+    showClosedEl.addEventListener('change', applyShowClosed);
+    applyShowClosed();
+  }
+
+  if (autoCloseEl) {
+    const applyAutoClose = () => {
+      app.updateAutoCloseFaces(autoCloseEl.checked);
+    };
+    autoCloseEl.addEventListener('change', applyAutoClose);
+    applyAutoClose();
   }
 
   if (gridDensityEl) {
