@@ -33,11 +33,15 @@
     <main class="workspace">
       <section class="canvas-card glass-panel">
         <header class="card-title">
-          <span class="material-icons-outlined" aria-hidden="true">view_in_ar</span>
-          <h2>Arbeitsfläche</h2>
+          <div class="card-label">
+            <span class="material-icons-outlined" aria-hidden="true">view_in_ar</span>
+            <h2>Arbeitsfläche</h2>
+          </div>
+          <span class="canvas-status" id="face-count">Flächen: 0 | Volumen: 0</span>
         </header>
         <div id="canvas-container" class="canvas-frame">
-          <canvas id="three-canvas"></canvas>
+          <canvas id="three-canvas" width="720" height="720"></canvas>
+          <canvas id="canvas-debug" width="120" height="120" aria-hidden="true"></canvas>
         </div>
       </section>
 
@@ -103,25 +107,21 @@
               </div>
             </div>
             <div class="toggle-grid">
-              <label class="toggle-tile" title="Punkte anzeigen">
+              <label class="icon-toggle" title="Punkte anzeigen" aria-label="Punkte anzeigen">
                 <input type="checkbox" id="toggle-points" checked />
                 <span class="material-icons-outlined" aria-hidden="true">blur_on</span>
-                <span>Punkte</span>
               </label>
-              <label class="toggle-tile" title="Linien anzeigen">
+              <label class="icon-toggle" title="Linien anzeigen" aria-label="Linien anzeigen">
                 <input type="checkbox" id="toggle-lines" checked />
                 <span class="material-icons-outlined" aria-hidden="true">timeline</span>
-                <span>Linien</span>
               </label>
-              <label class="toggle-tile" title="Kurven anzeigen">
+              <label class="icon-toggle" title="Kurven anzeigen" aria-label="Kurven anzeigen">
                 <input type="checkbox" id="toggle-curved-lines" />
                 <span class="material-icons-outlined" aria-hidden="true">scatter_plot</span>
-                <span>Kurven</span>
               </label>
-              <label class="toggle-tile" title="Gewölbte Flächen anzeigen">
+              <label class="icon-toggle" title="Gewölbte Flächen anzeigen" aria-label="Gewölbte Flächen anzeigen">
                 <input type="checkbox" id="toggle-curved-surfaces" />
                 <span class="material-icons-outlined" aria-hidden="true">texture</span>
-                <span>Flächen</span>
               </label>
             </div>
           </div>
@@ -134,7 +134,7 @@
           </header>
           <div class="accordion">
             <details open>
-              <summary>
+              <summary class="section-label">
                 <span class="material-icons-outlined" aria-hidden="true">shape_line</span>
                 Formen
               </summary>
@@ -147,64 +147,60 @@
                     <span class="material-icons-outlined" aria-hidden="true">view_module</span>
                   </button>
                 </div>
-                <div class="toggle-grid compact">
-                  <label class="toggle-tile" title="Geschlossene Formen anzeigen">
+                <div class="icon-toggle-row glyph-row">
+                  <label class="icon-toggle glyph" title="Geschlossene Formen anzeigen" aria-label="Geschlossene Formen anzeigen">
                     <input type="checkbox" id="toggle-show-closed" checked />
-                    <span class="material-icons-outlined" aria-hidden="true">inventory_2</span>
-                    <span>Closed</span>
+                    <span class="icon-glyph" aria-hidden="true">🧱</span>
                   </label>
-                  <label class="toggle-tile" title="Automatisch Flächen schließen">
+                  <label class="icon-toggle glyph" title="Automatisch Flächen schließen" aria-label="Automatisch Flächen schließen">
                     <input type="checkbox" id="toggle-auto-close" />
-                    <span class="material-icons-outlined" aria-hidden="true">gesture</span>
-                    <span>Auto</span>
+                    <span class="icon-glyph" aria-hidden="true">⚙️</span>
                   </label>
-                  <label class="toggle-tile" title="Farbmarkierung aktivieren">
+                  <label class="icon-toggle glyph" title="Farbmarkierung aktivieren" aria-label="Farbmarkierung aktivieren">
                     <input type="checkbox" id="toggle-color-highlights" />
-                    <span class="material-icons-outlined" aria-hidden="true">palette</span>
-                    <span>Highlight</span>
+                    <span class="icon-glyph" aria-hidden="true">✴️</span>
                   </label>
                 </div>
               </div>
             </details>
 
             <details open>
-              <summary>
+              <summary class="section-label">
                 <span class="material-icons-outlined" aria-hidden="true">symmetry</span>
                 Symmetrien
               </summary>
               <div class="control-content">
-                <div class="toggle-grid compact">
-                  <label class="toggle-tile" title="Spiegelung XY">
+                <div class="icon-toggle-grid">
+                  <label class="icon-toggle" title="Spiegelung XY" aria-label="Spiegelung XY">
                     <input type="checkbox" id="reflection-xy" checked />
                     <span class="material-icons-outlined" aria-hidden="true">flip</span>
-                    <span>XY</span>
+                    <span class="icon-hint">XY</span>
                   </label>
-                  <label class="toggle-tile" title="Spiegelung YZ">
+                  <label class="icon-toggle" title="Spiegelung YZ" aria-label="Spiegelung YZ">
                     <input type="checkbox" id="reflection-yz" checked />
                     <span class="material-icons-outlined" aria-hidden="true">flip</span>
-                    <span>YZ</span>
+                    <span class="icon-hint">YZ</span>
                   </label>
-                  <label class="toggle-tile" title="Spiegelung ZX">
+                  <label class="icon-toggle" title="Spiegelung ZX" aria-label="Spiegelung ZX">
                     <input type="checkbox" id="reflection-zx" checked />
                     <span class="material-icons-outlined" aria-hidden="true">flip</span>
-                    <span>ZX</span>
+                    <span class="icon-hint">ZX</span>
                   </label>
-                  <label class="toggle-tile" title="Inversion aktivieren">
+                  <label class="icon-toggle" title="Inversion aktivieren" aria-label="Inversion aktivieren">
                     <input type="checkbox" id="toggle-inversion" />
                     <span class="material-icons-outlined" aria-hidden="true">donut_large</span>
-                    <span>Inv</span>
                   </label>
                 </div>
               </div>
             </details>
 
-            <details open>
-              <summary>
+            <details open data-section="transform">
+              <summary class="section-label">
                 <span class="material-icons-outlined" aria-hidden="true">transform</span>
                 Transformationen
               </summary>
-              <div class="control-content">
-                <label class="field" for="rotation-axis">
+              <div class="control-content transform-content">
+                <label class="field compact" for="rotation-axis">
                   <span class="field-label">
                     <span class="material-icons-outlined" aria-hidden="true">rotate_90_degrees_ccw</span>
                     Rotation
@@ -218,10 +214,10 @@
                   </select>
                 </label>
 
-                <div class="fieldset">
+                <div class="fieldset dense">
                   <div class="fieldset-header">Rotospiegelung</div>
-                  <div class="field-grid">
-                    <label class="field" for="rotoreflection-axis">
+                  <div class="field-grid tight">
+                    <label class="field compact" for="rotoreflection-axis">
                       <span class="field-label">Achse</span>
                       <select id="rotoreflection-axis" class="select-field">
                         <option value="none">Keine</option>
@@ -230,7 +226,7 @@
                         <option value="z">Z</option>
                       </select>
                     </label>
-                    <label class="field" for="rotoreflection-plane">
+                    <label class="field compact" for="rotoreflection-plane">
                       <span class="field-label">Ebene</span>
                       <select id="rotoreflection-plane" class="select-field">
                         <option value="xy">XY</option>
@@ -238,32 +234,31 @@
                         <option value="zx">ZX</option>
                       </select>
                     </label>
-                    <label class="slider-field" for="rotoreflection-angle">
+                    <label class="slider-field compact" for="rotoreflection-angle">
                       <span class="field-label">Winkel</span>
                       <div class="slider-wrapper">
                         <input type="range" id="rotoreflection-angle" min="0" max="360" step="1" value="180" />
                         <output id="rotoreflection-angle-value" for="rotoreflection-angle">180°</output>
                       </div>
                     </label>
-                    <label class="slider-field" for="rotoreflection-count">
+                    <label class="slider-field compact" for="rotoreflection-count">
                       <span class="field-label">Anzahl</span>
                       <div class="slider-wrapper">
                         <input type="range" id="rotoreflection-count" min="0" max="12" step="1" value="0" />
                         <output id="rotoreflection-count-value" for="rotoreflection-count">0</output>
                       </div>
                     </label>
-                    <label class="toggle-tile full" title="Rotospiegelung aktivieren">
+                    <label class="icon-toggle span-full" title="Rotospiegelung aktivieren" aria-label="Rotospiegelung aktivieren">
                       <input type="checkbox" id="rotoreflection-enabled" />
                       <span class="material-icons-outlined" aria-hidden="true">toggle_on</span>
-                      <span>Aktiv</span>
                     </label>
                   </div>
                 </div>
 
-                <div class="fieldset">
+                <div class="fieldset dense">
                   <div class="fieldset-header">Translation</div>
-                  <div class="field-grid">
-                    <label class="field" for="translation-axis">
+                  <div class="field-grid tight">
+                    <label class="field compact" for="translation-axis">
                       <span class="field-label">Achse</span>
                       <select id="translation-axis" class="select-field">
                         <option value="none" selected>Keine</option>
@@ -273,14 +268,14 @@
                         <option value="all">XYZ</option>
                       </select>
                     </label>
-                    <label class="slider-field" for="translation-count">
+                    <label class="slider-field compact" for="translation-count">
                       <span class="field-label">Wiederholung</span>
                       <div class="slider-wrapper">
                         <input type="range" id="translation-count" min="0" max="5" step="1" value="0" />
                         <output id="translation-count-value" for="translation-count">0</output>
                       </div>
                     </label>
-                    <label class="slider-field" for="translation-step">
+                    <label class="slider-field compact" for="translation-step">
                       <span class="field-label">Schrittweite</span>
                       <div class="slider-wrapper">
                         <input type="range" id="translation-step" min="0" max="2" step="0.1" value="0.5" />
@@ -290,10 +285,10 @@
                   </div>
                 </div>
 
-                <div class="fieldset">
+                <div class="fieldset dense">
                   <div class="fieldset-header">Schraubung</div>
-                  <div class="field-grid">
-                    <label class="field" for="screw-axis">
+                  <div class="field-grid tight">
+                    <label class="field compact" for="screw-axis">
                       <span class="field-label">Achse</span>
                       <select id="screw-axis" class="select-field">
                         <option value="none" selected>Keine</option>
@@ -302,31 +297,30 @@
                         <option value="z">Z</option>
                       </select>
                     </label>
-                    <label class="slider-field" for="screw-angle">
+                    <label class="slider-field compact" for="screw-angle">
                       <span class="field-label">Winkel</span>
                       <div class="slider-wrapper">
                         <input type="range" id="screw-angle" min="0" max="360" step="1" value="120" />
                         <output id="screw-angle-value" for="screw-angle">120°</output>
                       </div>
                     </label>
-                    <label class="slider-field" for="screw-distance">
+                    <label class="slider-field compact" for="screw-distance">
                       <span class="field-label">Gang</span>
                       <div class="slider-wrapper">
                         <input type="range" id="screw-distance" min="0" max="2" step="0.1" value="0.5" />
                         <output id="screw-distance-value" for="screw-distance">0.5</output>
                       </div>
                     </label>
-                    <label class="slider-field" for="screw-count">
+                    <label class="slider-field compact" for="screw-count">
                       <span class="field-label">Anzahl</span>
                       <div class="slider-wrapper">
                         <input type="range" id="screw-count" min="0" max="12" step="1" value="0" />
                         <output id="screw-count-value" for="screw-count">0</output>
                       </div>
                     </label>
-                    <label class="toggle-tile full" title="Schraubung aktivieren">
+                    <label class="icon-toggle span-full" title="Schraubung aktivieren" aria-label="Schraubung aktivieren">
                       <input type="checkbox" id="screw-enabled" />
                       <span class="material-icons-outlined" aria-hidden="true">toggle_on</span>
-                      <span>Aktiv</span>
                     </label>
                   </div>
                 </div>
@@ -335,9 +329,6 @@
           </div>
         </section>
 
-        <section class="status-card glass-panel">
-          <span id="face-count">Flächen: 0 | Volumen: 0</span>
-        </section>
       </aside>
     </main>
   </div>

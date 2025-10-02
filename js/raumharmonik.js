@@ -377,23 +377,92 @@ class RaumharmonikApp {
     }
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
-      alpha: false,
+      alpha: true, // Wichtig: alpha aktivieren für Transparenz
       canvas: existingCanvas || undefined,
     });
     this.renderer.setPixelRatio(window.devicePixelRatio);
+    this.renderer.setClearAlpha(0); // Hintergrund des Renderers transparent machen
     this.renderer.setSize(INITIAL_CANVAS_SIZE, INITIAL_CANVAS_SIZE, false);
     const syncThemeToRenderer = (theme) => {
       const isDark = theme === 'dark';
-      const hex = isDark ? 0x000000 : 0xffffff;
+      const hex = isDark ? 0x111111 : 0xf5f5f5;
       this.scene.background = new THREE.Color(hex);
       this.renderer.setClearColor(hex, 1);
     };
 
+    this.pointGeometry = new THREE.SphereGeometry(0.01, 16, 16);
+    this.pointMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    this.activePointGeometry = new THREE.SphereGeometry(0.014, 16, 16);
+    this.activePointMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    this.selectionPointMaterial = new THREE.MeshBasicMaterial({ color: 0x0077ff });
+    this.lineMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
+    this.curvedLineMaterial = new THREE.LineBasicMaterial({ color: 0x555555 });
+    this.neutralFaceMaterial = new THREE.MeshStandardMaterial({ color: 0x888888, transparent: true, opacity: 0.15, side: THREE.DoubleSide });
+    this.neutralVolumeMaterial = new THREE.MeshStandardMaterial({ color: 0x888888, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
+    this.faceHighlightMaterial = new THREE.MeshStandardMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.22, side: THREE.DoubleSide });
+    this.faceRegularMaterial = new THREE.MeshStandardMaterial({ color: 0x33ff88, transparent: true, opacity: 0.28, side: THREE.DoubleSide, emissive: 0x002200 });
+    this.volumeHighlightMaterial = new THREE.MeshStandardMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.18, side: THREE.DoubleSide });
+    this.volumeRegularMaterial = new THREE.MeshStandardMaterial({ color: 0x33ff88, transparent: true, opacity: 0.22, side: THREE.DoubleSide, emissive: 0x002200 });
+    this.highlightMaterial = new THREE.MeshStandardMaterial({ color: 0xffff66, transparent: true, opacity: 0.4, side: THREE.DoubleSide, emissive: 0x333300 });
+
+    this.useCurvedLines = false;
+    this.useCurvedSurfaces = false;
+    this.curvedSurfaceSegments = 8;
+    this.curvedSurfaceCurvature = 0.3;
+
+
+    const applyMaterialTheme = (theme) => {
+      const isDark = theme === 'dark';
+      const lineHex = isDark ? 0xdddddd : 0x222222;
+      const pointHex = isDark ? 0xf0f0f0 : 0x111111;
+      const faceHex = isDark ? 0xffffff : 0x8c8c8c;
+      const volumeHex = isDark ? 0xffffff : 0x8c8c8c;
+
+      this.pointMaterial.color.setHex(pointHex);
+      this.pointMaterial.needsUpdate = true;
+      this.activePointMaterial.color.setHex(isDark ? 0xffffff : 0x333333);
+      this.activePointMaterial.needsUpdate = true;
+      this.selectionPointMaterial.color.setHex(isDark ? 0xffffff : 0x000000);
+      this.selectionPointMaterial.needsUpdate = true;
+      this.lineMaterial.color.setHex(lineHex);
+      this.curvedLineMaterial.color.setHex(lineHex);
+      this.lineMaterial.needsUpdate = true;
+      this.curvedLineMaterial.needsUpdate = true;
+
+      this.neutralFaceMaterial.color.setHex(faceHex);
+      this.neutralFaceMaterial.opacity = isDark ? 0.18 : 0.24;
+      this.neutralFaceMaterial.transparent = true;
+      this.neutralFaceMaterial.needsUpdate = true;
+      this.neutralVolumeMaterial.color.setHex(volumeHex);
+      this.neutralVolumeMaterial.opacity = isDark ? 0.24 : 0.32;
+      this.neutralVolumeMaterial.transparent = true;
+      this.neutralVolumeMaterial.needsUpdate = true;
+
+      this.faceHighlightMaterial.color.setHex(isDark ? 0xffffff : 0xffffff);
+      this.faceHighlightMaterial.opacity = isDark ? 0.22 : 0.18;
+      this.faceHighlightMaterial.transparent = true;
+      this.faceHighlightMaterial.needsUpdate = true;
+      this.volumeHighlightMaterial.color.setHex(isDark ? 0xffffff : 0xffffff);
+      this.volumeHighlightMaterial.opacity = isDark ? 0.2 : 0.16;
+      this.volumeHighlightMaterial.transparent = true;
+      this.volumeHighlightMaterial.needsUpdate = true;
+      this.faceRegularMaterial.color.setHex(isDark ? 0xe6e6e6 : 0xbababa);
+      this.faceRegularMaterial.opacity = isDark ? 0.22 : 0.26;
+      this.faceRegularMaterial.transparent = true;
+      this.faceRegularMaterial.needsUpdate = true;
+      this.volumeRegularMaterial.color.setHex(isDark ? 0xe6e6e6 : 0xbababa);
+      this.volumeRegularMaterial.opacity = isDark ? 0.24 : 0.22;
+      this.volumeRegularMaterial.transparent = true;
+      this.volumeRegularMaterial.needsUpdate = true;
+    };
+
     const currentTheme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
     syncThemeToRenderer(currentTheme);
+    applyMaterialTheme(currentTheme);
     document.addEventListener('rh-theme-change', (event) => {
       const theme = event?.detail?.theme === 'dark' ? 'dark' : 'light';
       syncThemeToRenderer(theme);
+      applyMaterialTheme(theme);
     });
     if (!existingCanvas) {
       this.renderer.domElement.id = 'three-canvas';
@@ -422,25 +491,6 @@ class RaumharmonikApp {
     );
 
     this.symmetry = new SymmetryEngine();
-    this.pointGeometry = new THREE.SphereGeometry(0.01, 16, 16);
-    this.pointMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
-    this.activePointGeometry = new THREE.SphereGeometry(0.014, 16, 16);
-    this.activePointMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-    this.selectionPointMaterial = new THREE.MeshBasicMaterial({ color: 0x0077ff });
-    this.lineMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
-    this.neutralFaceMaterial = new THREE.MeshStandardMaterial({ color: 0x888888, transparent: true, opacity: 0.15, side: THREE.DoubleSide });
-    this.neutralVolumeMaterial = new THREE.MeshStandardMaterial({ color: 0x888888, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
-    this.faceHighlightMaterial = new THREE.MeshStandardMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.22, side: THREE.DoubleSide });
-    this.faceRegularMaterial = new THREE.MeshStandardMaterial({ color: 0x33ff88, transparent: true, opacity: 0.28, side: THREE.DoubleSide, emissive: 0x002200 });
-    this.volumeHighlightMaterial = new THREE.MeshStandardMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.18, side: THREE.DoubleSide });
-    this.volumeRegularMaterial = new THREE.MeshStandardMaterial({ color: 0x33ff88, transparent: true, opacity: 0.22, side: THREE.DoubleSide, emissive: 0x002200 });
-    this.highlightMaterial = new THREE.MeshStandardMaterial({ color: 0xffff66, transparent: true, opacity: 0.4, side: THREE.DoubleSide, emissive: 0x333300 });
-
-    this.useCurvedLines = false;
-    this.curvedLineMaterial = new THREE.LineBasicMaterial({ color: 0x555555 });
-    this.useCurvedSurfaces = false;
-    this.curvedSurfaceSegments = 8;
-    this.curvedSurfaceCurvature = 0.3;
 
     this.gridDivisions = 1;
     this.axisPositions = this._axisPositions(this.gridDivisions);
