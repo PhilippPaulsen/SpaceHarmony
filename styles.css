@@ -227,6 +227,7 @@ body::before {
 .icon-strip {
   display: flex;
   gap: 12px;
+  justify-content: space-between;
   flex-wrap: wrap;
 }
 
