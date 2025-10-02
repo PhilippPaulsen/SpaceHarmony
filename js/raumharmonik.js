@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 const CUBE_HALF_SIZE = 0.5;
-const INITIAL_CANVAS_SIZE = 320;
+const INITIAL_CANVAS_SIZE = 640;
+const MIN_CANVAS_SIZE = 280;
 const DRAG_THRESHOLD_SQ = 9;
 const RAY_PICK_THRESHOLD = 0.05;
 
@@ -356,7 +357,6 @@ class RaumharmonikApp {
   constructor(container) {
     this.container = container;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0xffffff);
 
     const aspect = 1;
     const frustumSize = 2;
@@ -371,11 +371,34 @@ class RaumharmonikApp {
     this.camera.position.set(1.8, 1.8, 1.8);
     this.camera.lookAt(0, 0, 0);
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    const existingCanvas = this.container.querySelector('canvas');
+    if (existingCanvas && !existingCanvas.id) {
+      existingCanvas.id = 'three-canvas';
+    }
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: false,
+      canvas: existingCanvas || undefined,
+    });
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setSize(INITIAL_CANVAS_SIZE, INITIAL_CANVAS_SIZE, false);
-    this.renderer.setClearColor(0xffffff, 1);
-    this.container.appendChild(this.renderer.domElement);
+    const syncThemeToRenderer = (theme) => {
+      const isDark = theme === 'dark';
+      const hex = isDark ? 0x000000 : 0xffffff;
+      this.scene.background = new THREE.Color(hex);
+      this.renderer.setClearColor(hex, 1);
+    };
+
+    const currentTheme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
+    syncThemeToRenderer(currentTheme);
+    document.addEventListener('rh-theme-change', (event) => {
+      const theme = event?.detail?.theme === 'dark' ? 'dark' : 'light';
+      syncThemeToRenderer(theme);
+    });
+    if (!existingCanvas) {
+      this.renderer.domElement.id = 'three-canvas';
+      this.container.appendChild(this.renderer.domElement);
+    }
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
@@ -2548,8 +2571,16 @@ class RaumharmonikApp {
   }
 
   _onResize() {
-    const size = Math.min(INITIAL_CANVAS_SIZE, window.innerWidth - 40);
+    const bounds = this.container.getBoundingClientRect();
+    const available = Math.min(
+      bounds.width || INITIAL_CANVAS_SIZE,
+      bounds.height || INITIAL_CANVAS_SIZE,
+    );
+    const size = Math.max(MIN_CANVAS_SIZE, Math.min(INITIAL_CANVAS_SIZE, available));
     this.renderer.setSize(size, size, false);
+    const canvas = this.renderer.domElement;
+    canvas.style.width = `${size}px`;
+    canvas.style.height = `${size}px`;
     const aspect = 1;
     const frustumSize = 2;
     this.camera.left = (frustumSize * aspect) / -2;
