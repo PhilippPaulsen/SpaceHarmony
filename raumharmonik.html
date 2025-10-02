@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Raumharmonik – Welt der Formen</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/>" />
+  <link rel="stylesheet" href="styles.css?v=1.1" />
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js",
+        "three/": "https://cdn.jsdelivr.net/npm/three@0.152.2/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div class="app-shell">
+    <main class="workspace-grid">
+      <section class="canvas-card glass-panel">
+        <header class="card-header">
+          <div class="card-title">
+            <h2>Space Harmony</h2>
+          </div>
+          <div class="card-actions">
+            <span class="canvas-status" id="face-count">Faces: 0 | Volumes: 0</span>
+            <button type="button" id="theme-toggle" class="icon-button" title="Toggle Theme" aria-label="Toggle Color Scheme">
+              <span class="material-icons-outlined" aria-hidden="true">dark_mode</span>
+            </button>
+          </div>
+        </header>
+        <div id="canvas-container" class="canvas-frame">
+          <canvas id="three-canvas" width="720" height="720"></canvas>
+        </div>
+      </section>
+
+      <aside>
+        <section class="control-card glass-panel">
+          <div class="control-content">
+            <div class="icon-strip">
+              <button type="button" id="undo-button" class="icon-button" title="Undo">
+                <span class="material-icons-outlined" aria-hidden="true">undo</span>
+              </button>
+              <button type="button" id="redo-button" class="icon-button" title="Redo">
+                <span class="material-icons-outlined" aria-hidden="true">redo</span>
+              </button>
+              <button type="button" id="random-form-button" class="icon-button" title="Random Form">
+                <span class="material-icons-outlined" aria-hidden="true">auto_awesome</span>
+              </button>
+              <button type="button" id="clear-button" class="icon-button" title="Clear All">
+                <span class="material-icons-outlined" aria-hidden="true">delete_sweep</span>
+              </button>
+            </div>
+            <div class="icon-strip">
+              <button type="button" id="import-json-button" class="icon-button" title="Import JSON">
+                <span class="material-icons-outlined" aria-hidden="true">upload_file</span>
+              </button>
+              <button type="button" id="export-json-button" class="icon-button" title="Export JSON">
+                <span class="material-icons-outlined" aria-hidden="true">download</span>
+              </button>
+              <button type="button" id="export-obj-button" class="icon-button" title="Export OBJ">
+                <span class="material-icons-outlined" aria-hidden="true">view_in_ar</span>
+              </button>
+              <button type="button" id="export-stl-button" class="icon-button" title="Export STL">
+                <span class="material-icons-outlined" aria-hidden="true">precision_manufacturing</span>
+              </button>
+            </div>
+            <label class="field inline" for="preset-select">
+              <span class="field-label">
+                <span class="material-icons-outlined" aria-hidden="true">collections_bookmark</span>
+              </span>
+              <select id="preset-select" class="select-field" aria-label="Presets"></select>
+            </label>
+          </div>
+
+          <div class="accordion">
+            <details open>
+              <summary>Display</summary>
+            <div class="slider-field">
+              <label for="grid-density">
+                <span class="material-icons-outlined" aria-hidden="true">grain</span>
+                Punktdichte
+              </label>
+              <div class="slider-wrapper">
+                <input type="range" id="grid-density" min="1" max="12" step="1" value="1" />
+                <output id="grid-density-value" for="grid-density">1</output>
+              </div>
+            </div>
+            <div class="toggle-grid">
+              <label class="icon-toggle" title="Punkte anzeigen" aria-label="Punkte anzeigen">
+                <input type="checkbox" id="toggle-points" checked />
+                <span class="material-icons-outlined" aria-hidden="true">grain</span>
+              </label>
+              <label class="icon-toggle" title="Linien anzeigen" aria-label="Linien anzeigen">
+                <input type="checkbox" id="toggle-lines" checked />
+                <span class="material-icons-outlined" aria-hidden="true">timeline</span>
+              </label>
+              <label class="icon-toggle" title="Kurven anzeigen" aria-label="Kurven anzeigen">
+                <input type="checkbox" id="toggle-curved-lines" />
+                <span class="material-icons-outlined" aria-hidden="true">rounded_corner</span>
+              </label>
+              <label class="icon-toggle" title="Gewölbte Flächen anzeigen" aria-label="Gewölbte Flächen anzeigen">
+                <input type="checkbox" id="toggle-curved-surfaces" />
+                <span class="material-icons-outlined" aria-hidden="true">texture</span>
+              </label>
+            </div>
+            </details>
+
+            <details open>
+              <summary class="section-label">
+                <span class="material-icons-outlined" aria-hidden="true">shape_line</span>
+                Formen
+              </summary>
+              <div class="control-content">
+                <div class="icon-strip">
+                  <button type="button" id="close-face-button" class="icon-button" title="Fläche schließen">
+                    <span class="material-icons-outlined" aria-hidden="true">grid_on</span>
+                  </button>
+                  <button type="button" id="close-volume-button" class="icon-button" title="Volumen schließen">
+                    <span class="material-icons-outlined" aria-hidden="true">view_module</span>
+                  </button>
+                </div>
+                <div class="icon-toggle-row">
+                  <label class="icon-toggle" title="Geschlossene Formen anzeigen" aria-label="Geschlossene Formen anzeigen">
+                    <input type="checkbox" id="toggle-show-closed" checked />
+                    <span class="material-icons-outlined" aria-hidden="true">inventory_2</span>
+                  </label>
+                  <label class="icon-toggle" title="Auto-Flächen schließen" aria-label="Auto-Flächen schließen">
+                    <input type="checkbox" id="toggle-auto-close" />
+                    <span class="material-icons-outlined" aria-hidden="true">auto_mode</span>
+                  </label>
+                  <label class="icon-toggle" title="Farbmarkierung aktivieren" aria-label="Farbmarkierung aktivieren">
+                    <input type="checkbox" id="toggle-color-highlights" />
+                    <span class="material-icons-outlined" aria-hidden="true">highlight_alt</span>
+                  </label>
+                </div>
+              </div>
+            </details>
+
+            <details open>
+              <summary class="section-label">
+                <span class="material-icons-outlined" aria-hidden="true">symmetry</span>
+                Symmetrien
+              </summary>
+              <div class="control-content">
+                <div class="icon-toggle-grid">
+                  <label class="icon-toggle" title="Spiegelung XY" aria-label="Spiegelung XY">
+                    <input type="checkbox" id="reflection-xy" checked />
+                    <span class="material-icons-outlined" aria-hidden="true">flip</span>
+                    <span class="icon-hint">XY</span>
+                  </label>
+                  <label class="icon-toggle" title="Spiegelung YZ" aria-label="Spiegelung YZ">
+                    <input type="checkbox" id="reflection-yz" checked />
+                    <span class="material-icons-outlined" aria-hidden="true">flip</span>
+                    <span class="icon-hint">YZ</span>
+                  </label>
+                  <label class="icon-toggle" title="Spiegelung ZX" aria-label="Spiegelung ZX">
+                    <input type="checkbox" id="reflection-zx" checked />
+                    <span class="material-icons-outlined" aria-hidden="true">flip</span>
+                    <span class="icon-hint">ZX</span>
+                  </label>
+                  <label class="icon-toggle" title="Inversion aktivieren" aria-label="Inversion aktivieren">
+                    <input type="checkbox" id="toggle-inversion" />
+                    <span class="material-icons-outlined" aria-hidden="true">all_out</span>
+                  </label>
+                </div>
+              </div>
+            </details>
+
+            <details>
+              <summary>Transformations</summary>
+              <div class="control-content transform-content">
+                <label class="field inline compact" for="rotation-axis">
+                  <span class="field-label">
+                    <span class="material-icons-outlined" aria-hidden="true">rotate_90_degrees_ccw</span>
+                  </span>
+                  <select id="rotation-axis" class="select-field">
+                    <option value="none">Rotation: None</option>
+                    <option value="x">X</option>
+                    <option value="y">Y</option>
+                    <option value="z">Z</option>
+                    <option value="all" selected>XYZ</option>
+                  </select>
+                </label>
+
+                <div class="fieldset dense">
+                  <div class="fieldset-header">Rotoreflection</div>
+                  <div class="field-grid tight">
+                    <label class="field inline compact" for="rotoreflection-axis">
+                      <span class="field-label" aria-hidden="true">↔</span>
+                      <select id="rotoreflection-axis" class="select-field">
+                        <option value="none">Axis: None</option>
+                        <option value="x">X</option>
+                        <option value="y">Y</option>
+                        <option value="z">Z</option>
+                      </select>
+                    </label>
+                    <label class="field inline compact" for="rotoreflection-plane">
+                      <span class="field-label" aria-hidden="true">⧉</span>
+                      <select id="rotoreflection-plane" class="select-field">
+                        <option value="xy">Plane: XY</option>
+                        <option value="yz">YZ</option>
+                        <option value="zx">ZX</option>
+                      </select>
+                    </label>
+                    <label class="slider-field compact" for="rotoreflection-angle">
+                      <span class="field-label">Angle</span>
+                      <div class="slider-wrapper">
+                        <input type="range" id="rotoreflection-angle" min="0" max="360" step="1" value="180" />
+                        <output id="rotoreflection-angle-value" for="rotoreflection-angle">180°</output>
+                      </div>
+                    </label>
+                    <label class="slider-field compact" for="rotoreflection-count">
+                      <span class="field-label">Count</span>
+                      <div class="slider-wrapper">
+                        <input type="range" id="rotoreflection-count" min="0" max="12" step="1" value="0" />
+                        <output id="rotoreflection-count-value" for="rotoreflection-count">0</output>
+                      </div>
+                    </label>
+                    <label class="icon-toggle span-full" title="Enable Rotoreflection" aria-label="Enable Rotoreflection">
+                      <input type="checkbox" id="rotoreflection-enabled" />
+                      <span class="material-icons-outlined" aria-hidden="true">toggle_on</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="fieldset dense">
+                  <div class="fieldset-header">Translation</div>
+                  <div class="field-grid tight">
+                    <label class="field compact" for="translation-axis">
+                      <span class="field-label">Axis</span>
+                      <select id="translation-axis" class="select-field">
+                        <option value="none" selected>None</option>
+                        <option value="x">X</option>
+                        <option value="y">Y</option>
+                        <option value="z">Z</option>
+                        <option value="all">XYZ</option>
+                      </select>
+                    </label>
+                    <label class="slider-field compact" for="translation-count">
+                      <span class="field-label">Repeat</span>
+                      <div class="slider-wrapper">
+                        <input type="range" id="translation-count" min="0" max="5" step="1" value="0" />
+                        <output id="translation-count-value" for="translation-count">0</output>
+                      </div>
+                    </label>
+                    <label class="slider-field compact" for="translation-step">
+                      <span class="field-label">Step Size</span>
+                      <div class="slider-wrapper">
+                        <input type="range" id="translation-step" min="0" max="2" step="0.1" value="0.5" />
+                        <output id="translation-step-value" for="translation-step">0.5</output>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="fieldset dense">
+                  <div class="fieldset-header">Screw Axis</div>
+                  <div class="field-grid tight">
+                    <label class="field compact" for="screw-axis">
+                      <span class="field-label">Axis</span>
+                      <select id="screw-axis" class="select-field">
+                        <option value="none" selected>None</option>
+                        <option value="x">X</option>
+                        <option value="y">Y</option>
+                        <option value="z">Z</option>
+                      </select>
+                    </label>
+                    <label class="slider-field compact" for="screw-angle">
+                      <span class="field-label">Angle</span>
+                      <div class="slider-wrapper">
+                        <input type="range" id="screw-angle" min="0" max="360" step="1" value="120" />
+                        <output id="screw-angle-value" for="screw-angle">120°</output>
+                      </div>
+                    </label>
+                    <label class="slider-field compact" for="screw-distance">
+                      <span class="field-label">Pitch</span>
+                      <div class="slider-wrapper">
+                        <input type="range" id="screw-distance" min="0" max="2" step="0.1" value="0.5" />
+                        <output id="screw-distance-value" for="screw-distance">0.5</output>
+                      </div>
+                    </label>
+                    <label class="slider-field compact" for="screw-count">
+                      <span class="field-label">Count</span>
+                      <div class="slider-wrapper">
+                        <input type="range" id="screw-count" min="0" max="12" step="1" value="0" />
+                        <output id="screw-count-value" for="screw-count">0</output>
+                      </div>
+                    </label>
+                    <label class="icon-toggle span-full" title="Enable Screw Axis" aria-label="Enable Screw Axis">
+                      <input type="checkbox" id="screw-enabled" />
+                      <span class="material-icons-outlined" aria-hidden="true">toggle_on</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </details>
+          </div>
+        </section>
+
+        <section class="control-card glass-panel transform-card">
+          <header class="card-title">
+            <span class="material-icons-outlined" aria-hidden="true">compare_arrows</span>
+            <h2>Transformationen</h2>
+          </header>
+          <div class="control-content transform-content">
+            <label class="field compact" for="rotation-axis">
+              <span class="field-label">
+                <span class="material-icons-outlined" aria-hidden="true">rotate_90_degrees_ccw</span>
+                Rotation
+              </span>
+              <select id="rotation-axis" class="select-field">
+                <option value="none">Keine</option>
+                <option value="x">X</option>
+                <option value="y">Y</option>
+                <option value="z">Z</option>
+                <option value="all" selected>XYZ</option>
+              </select>
+            </label>
+
+            <div class="fieldset dense">
+              <div class="fieldset-header">Rotospiegelung</div>
+              <div class="field-grid tight">
+                <label class="field compact" for="rotoreflection-axis">
+                  <span class="field-label">Achse</span>
+                  <select id="rotoreflection-axis" class="select-field">
+                    <option value="none">Keine</option>
+                    <option value="x">X</option>
+                    <option value="y">Y</option>
+                    <option value="z">Z</option>
+                  </select>
+                </label>
+                <label class="field compact" for="rotoreflection-plane">
+                  <span class="field-label">Ebene</span>
+                  <select id="rotoreflection-plane" class="select-field">
+                    <option value="xy">XY</option>
+                    <option value="yz">YZ</option>
+                    <option value="zx">ZX</option>
+                  </select>
+                </label>
+                <label class="slider-field compact" for="rotoreflection-angle">
+                  <span class="field-label">Winkel</span>
+                  <div class="slider-wrapper">
+                    <input type="range" id="rotoreflection-angle" min="0" max="360" step="1" value="180" />
+                    <output id="rotoreflection-angle-value" for="rotoreflection-angle">180°</output>
+                  </div>
+                </label>
+                <label class="slider-field compact" for="rotoreflection-count">
+                  <span class="field-label">Anzahl</span>
+                  <div class="slider-wrapper">
+                    <input type="range" id="rotoreflection-count" min="0" max="12" step="1" value="0" />
+                    <output id="rotoreflection-count-value" for="rotoreflection-count">0</output>
+                  </div>
+                </label>
+                <label class="icon-toggle span-full" title="Rotospiegelung aktivieren" aria-label="Rotospiegelung aktivieren">
+                  <input type="checkbox" id="rotoreflection-enabled" />
+                  <span class="material-icons-outlined" aria-hidden="true">toggle_on</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="fieldset dense">
+              <div class="fieldset-header">Translation</div>
+              <div class="field-grid tight">
+                <label class="field compact" for="translation-axis">
+                  <span class="field-label">Achse</span>
+                  <select id="translation-axis" class="select-field">
+                    <option value="none" selected>Keine</option>
+                    <option value="x">X</option>
+                    <option value="y">Y</option>
+                    <option value="z">Z</option>
+                    <option value="all">XYZ</option>
+                  </select>
+                </label>
+                <label class="slider-field compact" for="translation-count">
+                  <span class="field-label">Wiederholung</span>
+                  <div class="slider-wrapper">
+                    <input type="range" id="translation-count" min="0" max="5" step="1" value="0" />
+                    <output id="translation-count-value" for="translation-count">0</output>
+                  </div>
+                </label>
+                <label class="slider-field compact" for="translation-step">
+                  <span class="field-label">Schrittweite</span>
+                  <div class="slider-wrapper">
+                    <input type="range" id="translation-step" min="0" max="2" step="0.1" value="0.5" />
+                    <output id="translation-step-value" for="translation-step">0.5</output>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div class="fieldset dense">
+              <div class="fieldset-header">Schraubung</div>
+              <div class="field-grid tight">
+                <label class="field compact" for="screw-axis">
+                  <span class="field-label">Achse</span>
+                  <select id="screw-axis" class="select-field">
+                    <option value="none" selected>Keine</option>
+                    <option value="x">X</option>
+                    <option value="y">Y</option>
+                    <option value="z">Z</option>
+                  </select>
+                </label>
+                <label class="slider-field compact" for="screw-angle">
+                  <span class="field-label">Winkel</span>
+                  <div class="slider-wrapper">
+                    <input type="range" id="screw-angle" min="0" max="360" step="1" value="120" />
+                    <output id="screw-angle-value" for="screw-angle">120°</output>
+                  </div>
+                </label>
+                <label class="slider-field compact" for="screw-distance">
+                  <span class="field-label">Gang</span>
+                  <div class="slider-wrapper">
+                    <input type="range" id="screw-distance" min="0" max="2" step="0.1" value="0.5" />
+                    <output id="screw-distance-value" for="screw-distance">0.5</output>
+                  </div>
+                </label>
+                <label class="slider-field compact" for="screw-count">
+                  <span class="field-label">Anzahl</span>
+                  <div class="slider-wrapper">
+                    <input type="range" id="screw-count" min="0" max="12" step="1" value="0" />
+                    <output id="screw-count-value" for="screw-count">0</output>
+                  </div>
+                </label>
+                <label class="icon-toggle span-full" title="Schraubung aktivieren" aria-label="Schraubung aktivieren">
+                  <input type="checkbox" id="screw-enabled" />
+                  <span class="material-icons-outlined" aria-hidden="true">toggle_on</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <script type="module" src="js/raumharmonik.js"></script>
+  <script type="module">
+    const root = document.documentElement;
+    const themeToggle = document.getElementById('theme-toggle');
+    const sliders = Array.from(document.querySelectorAll('.slider-wrapper input[type="range"]'));
+    const THEME_STORAGE_KEY = 'rh-theme';
+
+    const updateSliderOutput = (input) => {
+      const output = input.parentElement?.querySelector('output');
+      if (!output) {
+        return;
+      }
+      const suffix = input.id.includes('angle') ? '°' : '';
+      const precision = input.step && Number(input.step) < 1 ? 1 : 0;
+      const value = Number.parseFloat(input.value);
+      output.textContent = precision ? value.toFixed(1) + suffix : Math.round(value) + suffix;
+    };
+
+    const setTheme = (mode) => {
+      const theme = mode === 'dark' ? 'dark' : 'light';
+      if (theme === 'dark') {
+        root.dataset.theme = 'dark';
+      } else {
+        root.removeAttribute('data-theme');
+      }
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+      const icon = themeToggle?.querySelector('.material-icons-outlined');
+      if (icon) {
+        icon.textContent = theme === 'dark' ? 'light_mode' : 'dark_mode';
+      }
+      document.dispatchEvent(new CustomEvent('rh-theme-change', { detail: { theme } }));
+    };
+
+    const applyStoredTheme = () => {
+      const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+      setTheme(stored === 'dark' ? 'dark' : 'light');
+    };
+
+    sliders.forEach((slider) => {
+      updateSliderOutput(slider);
+      slider.addEventListener('input', () => updateSliderOutput(slider));
+      slider.addEventListener('change', () => updateSliderOutput(slider));
+    });
+
+    if (themeToggle) {
+      themeToggle.addEventListener('click', () => {
+        const nextTheme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+        setTheme(nextTheme);
+      });
+      applyStoredTheme();
+    } else {
+      setTheme(root.dataset.theme === 'dark' ? 'dark' : 'light');
+    }
+  </script>
+</body>
+</html>

@@ -397,8 +397,8 @@ class RaumharmonikApp {
     this.selectionPointMaterial = new THREE.MeshBasicMaterial({ color: 0x0077ff });
     this.lineMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
     this.curvedLineMaterial = new THREE.LineBasicMaterial({ color: 0x555555 });
-    this.neutralFaceMaterial = new THREE.MeshStandardMaterial({ color: 0x888888, transparent: true, opacity: 0.15, side: THREE.DoubleSide });
-    this.neutralVolumeMaterial = new THREE.MeshStandardMaterial({ color: 0x888888, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
+    this.neutralFaceMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc, transparent: true, opacity: 0.15, side: THREE.DoubleSide });
+    this.neutralVolumeMaterial = new THREE.MeshStandardMaterial({ color: 0x555555, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
     this.faceHighlightMaterial = new THREE.MeshStandardMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.22, side: THREE.DoubleSide });
     this.faceRegularMaterial = new THREE.MeshStandardMaterial({ color: 0x33ff88, transparent: true, opacity: 0.28, side: THREE.DoubleSide, emissive: 0x002200 });
     this.volumeHighlightMaterial = new THREE.MeshStandardMaterial({ color: 0x2ee6ff, transparent: true, opacity: 0.18, side: THREE.DoubleSide });
@@ -415,8 +415,8 @@ class RaumharmonikApp {
       const isDark = theme === 'dark';
       const lineHex = isDark ? 0xffffff : 0x222222;
       const pointHex = isDark ? 0xf0f0f0 : 0x111111;
-      const faceHex = isDark ? 0xffffff : 0x8c8c8c;
-      const volumeHex = isDark ? 0xffffff : 0x8c8c8c;
+      const faceHex = isDark ? 0xffffff : 0xcccccc;
+      const volumeHex = isDark ? 0xffffff : 0x555555;
 
       this.pointMaterial.color.setHex(pointHex);
       this.pointMaterial.needsUpdate = true;
@@ -644,41 +644,270 @@ class RaumharmonikApp {
   }
 
   closeSelectedFace() {
-    const keys = this._getSelectionKeys(3);
-    if (keys.length !== 3) {
-      const added = this.completeSurfacesAndVolumes({ closeFacesOnly: true, maxEdges: 40 });
-      if (added === 0) {
+    const faces = this._findAllClosedFaces();
+    console.log(`[closeSelectedFace] Found ${faces.length} potential closed faces.`);
+
+    let newFacesCommitted = 0;
+    if (faces.length > 0) {
+      faces.forEach(faceKeys => {
+        if (!faceKeys || (faceKeys.length !== 3 && faceKeys.length !== 4)) return;
+        const faceKey = this._faceKeyFromKeys(faceKeys, faceKeys.length);
+        if (!this._hasFace(faceKey, { includeHidden: true })) {
+          console.log(`  -> Committing new face: ${faceKey}`);
+          this._commitManualFace(faceKeys, { recordHistory: false });
+          newFacesCommitted++;
+        } else {
+          // console.log(`  -> Face already exists, skipping: ${faceKey}`);
+        }
+      });
+      if (newFacesCommitted > 0) {
+        console.log(`Committed ${newFacesCommitted} new faces.`);
+        this._pushHistory({ type: 'addMultipleFaces', faces: faces.map(f => ({ keys: f })) });
+        this.future = [];
         this._rebuildSymmetryObjects();
       }
-      return;
     }
-    const faceKey = this._faceKeyFromKeys(keys);
-    if (this._hasFace(faceKey)) {
-      return;
-    }
-    this._ensureSegmentsForKeys(keys);
-    this._commitManualFace(keys);
-    this._clearSelection();
-    this._rebuildSymmetryObjects();
   }
 
   closeSelectedVolume() {
-    const keys = this._getSelectionKeys(4);
-    if (keys.length !== 4) {
-      const added = this.completeSurfacesAndVolumes({ closeFacesOnly: false, maxEdges: 60 });
-      if (added === 0) {
+    const volumes = this._findAllClosedVolumes();
+    console.log(`[closeSelectedVolume] Found ${volumes.length} potential closed volumes.`);
+    let newVolumesCommitted = 0;
+    if (volumes.length > 0) {
+      volumes.forEach(volumeKeys => {
+        if (!volumeKeys || volumeKeys.length !== 4) return;
+        const volumeKey = this._volumeKeyFromKeys(volumeKeys);
+        if (!this._hasVolume(volumeKey, { includeHidden: true })) {
+          console.log(`  -> Committing new volume: ${volumeKey}`);
+          this._commitManualVolume(volumeKeys, { recordHistory: false });
+          newVolumesCommitted++;
+        }
+      });
+      if (newVolumesCommitted > 0) {
+        console.log(`Committed ${newVolumesCommitted} new volumes.`);
+        this._pushHistory({ type: 'addMultipleVolumes', volumes: volumes.map(v => ({ keys: v })) });
+        this.future = [];
         this._rebuildSymmetryObjects();
       }
-      return;
     }
-    const volumeKey = this._volumeKeyFromKeys(keys);
-    if (this._hasVolume(volumeKey)) {
-      return;
+  }
+
+  _findClosedFaceFromSelection() {
+    if (!this.selectionBuffer.length) {
+      return null;
     }
-    this._ensureSegmentsForKeys(keys);
-    this._commitManualVolume(keys);
-    this._clearSelection();
-    this._rebuildSymmetryObjects();
+    // Start search from the last selected point
+    const lastSelectedIndex = this.selectionBuffer[this.selectionBuffer.length - 1];
+    const startPoint = this.gridPoints[lastSelectedIndex];
+    if (!startPoint) {
+      return null;
+    }
+    const startKey = this._pointKey(startPoint);
+
+    const neighbors = this.adjacencyGraph.get(startKey);
+    if (!neighbors) {
+      return null;
+    }
+
+    // --- Search for triangles (3-cycles) first ---
+    const neighborKeys = Array.from(neighbors);
+    if (neighbors.size >= 2) {
+      for (let i = 0; i < neighborKeys.length; i++) {
+        for (let j = i + 1; j < neighborKeys.length; j++) {
+          const keyB = neighborKeys[i];
+          const keyC = neighborKeys[j];
+          const neighborsOfB = this.adjacencyGraph.get(keyB);
+          if (neighborsOfB && neighborsOfB.has(keyC)) {
+            return [startKey, keyB, keyC]; // Found a closed triangle
+          }
+        }
+      }
+    }
+
+    // --- If no triangle, search for planar quadrilaterals (4-cycles) ---
+    if (neighbors.size >= 2) {
+      for (let i = 0; i < neighborKeys.length; i++) {
+        for (let j = i + 1; j < neighborKeys.length; j++) {
+          const keyB = neighborKeys[i];
+          const keyD = neighborKeys[j];
+
+          const neighborsOfB = this.adjacencyGraph.get(keyB);
+          const neighborsOfD = this.adjacencyGraph.get(keyD);
+
+          if (neighborsOfB && neighborsOfD) {
+            const commonNeighbors = new Set([...neighborsOfB].filter(n => neighborsOfD.has(n)));
+            commonNeighbors.delete(startKey); // Remove startKey itself
+
+            for (const keyC of commonNeighbors) {
+              const quadKeys = [startKey, keyB, keyC, keyD];
+              if (this._isPlanar(quadKeys, 1e-3)) {
+                return quadKeys; // Found a planar quad
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return null; // No closed face found of size 3 or 4
+  }
+
+  _isPlanar(keys, tolerance = 1e-4) {
+    if (keys.length < 4) {
+      return true; // Triangles are always planar
+    }
+    if (keys.length > 4) {
+      // This logic only supports triangles and quads for now
+      return false;
+    }
+    const points = keys.map((key) => this._vectorFromKey(key));
+    if (points.some((p) => !p)) {
+      return false;
+    }
+
+    const [p0, p1, p2, p3] = points;
+    const v1 = new THREE.Vector3().subVectors(p1, p0);
+    const v2 = new THREE.Vector3().subVectors(p2, p0);
+    const v3 = new THREE.Vector3().subVectors(p3, p0);
+
+    // Calculate the volume of the tetrahedron. If it's near zero, the points are coplanar.
+    const volume = Math.abs(v3.dot(v1.clone().cross(v2)));
+    return volume < tolerance;
+  }
+
+  _findAllClosedFaces() {
+    const faces = [];
+    const foundFaces = new Set();
+
+    if (!this.adjacencyGraph) return faces;
+
+    const keys = Array.from(this.adjacencyGraph.keys());
+
+    // Find all triangles
+    for (const keyA of keys) {
+      const neighborsA = this.adjacencyGraph.get(keyA);
+      if (!neighborsA) continue;
+      for (const keyB of neighborsA) {
+        if (keyB < keyA) continue;
+        const neighborsB = this.adjacencyGraph.get(keyB);
+        if (!neighborsB) continue;
+        for (const keyC of neighborsB) {
+          if (keyC < keyB) continue;
+          if (neighborsA.has(keyC)) {
+            const faceKeys = [keyA, keyB, keyC];
+            const faceKey = this._faceKeyFromKeys(faceKeys, 3);
+            if (!foundFaces.has(faceKey)) {
+              faces.push(faceKeys);
+              foundFaces.add(faceKey);
+            }
+          }
+        }
+      }
+    }
+
+    // Find all planar quads
+    for (let i = 0; i < keys.length; i += 1) {
+      const keyA = keys[i];
+      for (let j = i + 1; j < keys.length; j++) {
+        const keyC = keys[j];
+
+        // Find quads by looking for two non-adjacent nodes (A, C) that share two common neighbors (B, D).
+        if (this.adjacencyGraph.get(keyA)?.has(keyC)) {
+          continue;
+        }
+
+        const neighborsA = this.adjacencyGraph.get(keyA);
+        const neighborsC = this.adjacencyGraph.get(keyC); // This can be undefined
+        if (!neighborsA || !neighborsC) continue;
+
+        const commonNeighbors = [...neighborsA].filter(n => neighborsC.has(n));
+
+        if (commonNeighbors.length === 2) {
+          const [keyB, keyD] = commonNeighbors;
+          const quadKeys = [keyA, keyB, keyC, keyD];
+          const faceKey = this._faceKeyFromKeys(quadKeys, 4);
+          if (!foundFaces.has(faceKey) && this._isPlanar(quadKeys, 1e-3)) {
+            faces.push(quadKeys);
+            foundFaces.add(faceKey);
+          }
+        }
+      }
+    }
+    return faces;
+  }
+
+  _findClosedVolumeFromSelection() {
+    if (!this.selectionBuffer.length) {
+      return null;
+    }
+    const lastSelectedIndex = this.selectionBuffer[this.selectionBuffer.length - 1];
+    const startPoint = this.gridPoints[lastSelectedIndex];
+    if (!startPoint) {
+      return null;
+    }
+    const keyA = this._pointKey(startPoint);
+
+    const neighborsA = this.adjacencyGraph.get(keyA);
+    if (!neighborsA || neighborsA.size < 3) {
+      return null;
+    }
+
+    const neighborKeys = Array.from(neighborsA);
+    for (let i = 0; i < neighborKeys.length; i++) {
+      const keyB = neighborKeys[i];
+      for (let j = i + 1; j < neighborKeys.length; j++) {
+        const keyC = neighborKeys[j];
+        const neighborsB = this.adjacencyGraph.get(keyB);
+        if (!neighborsB || !neighborsB.has(keyC)) continue;
+
+        for (let k = j + 1; k < neighborKeys.length; k++) {
+          const keyD = neighborKeys[k];
+          const neighborsC = this.adjacencyGraph.get(keyC);
+          if (neighborsB.has(keyD) && neighborsC && neighborsC.has(keyD)) {
+            return [keyA, keyB, keyC, keyD]; // Found a closed tetrahedron
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  _findAllClosedVolumes() {
+    const volumes = [];
+    const foundVolumes = new Set();
+    if (!this.adjacencyGraph) return volumes;
+
+    const keys = Array.from(this.adjacencyGraph.keys());
+
+    for (const keyA of keys) {
+      const neighborsA = this.adjacencyGraph.get(keyA);
+      if (!neighborsA || neighborsA.size < 3) continue;
+
+      const neighborsArr = Array.from(neighborsA);
+      for (let i = 0; i < neighborsArr.length; i++) {
+        const keyB = neighborsArr[i];
+        if (keyB < keyA) continue;
+        const neighborsB = this.adjacencyGraph.get(keyB);
+        if (!neighborsB) continue;
+
+        for (let j = i + 1; j < neighborsArr.length; j++) {
+          const keyC = neighborsArr[j];
+          if (keyC < keyB || !neighborsB.has(keyC)) continue;
+
+          for (let k = j + 1; k < neighborsArr.length; k++) {
+            const keyD = neighborsArr[k];
+            if (keyD < keyC || !neighborsB.has(keyD) || !this.adjacencyGraph.get(keyC)?.has(keyD)) continue;
+
+            const volumeKey = this._volumeKeyFromKeys([keyA, keyB, keyC, keyD]);
+            if (!foundVolumes.has(volumeKey)) {
+              volumes.push([keyA, keyB, keyC, keyD]);
+              foundVolumes.add(volumeKey);
+            }
+          }
+        }
+      }
+    }
+    return volumes;
   }
 
   _generateGridPoints() {
@@ -747,8 +976,12 @@ class RaumharmonikApp {
     return sorted.join('->');
   }
 
-  _faceKeyFromKeys(keys) {
-    return [...keys].sort().join('#');
+  _faceKeyFromKeys(keys, size = 3) {
+    const sorted = [...keys].sort();
+    if (size === 4) {
+      return `quad-${sorted.join('#')}`;
+    }
+    return sorted.join('#');
   }
 
   _volumeKeyFromKeys(keys) {
@@ -970,7 +1203,7 @@ class RaumharmonikApp {
       if (!Array.isArray(face.keys) || face.keys.length !== 3) {
         return;
       }
-      const faceKey = this._faceKeyFromKeys(face.keys);
+    const faceKey = this._faceKeyFromKeys(face.keys, face.keys.length);
       this.manualFaces.set(faceKey, {
         key: faceKey,
         keys: face.keys.slice(),
@@ -1037,7 +1270,7 @@ class RaumharmonikApp {
       if (!Array.isArray(keys) || keys.length !== 3) {
         return;
       }
-      const faceKey = this._faceKeyFromKeys(keys);
+      const faceKey = this._faceKeyFromKeys(keys, 3);
       if (faceKeySet.has(faceKey)) {
         return;
       }
@@ -1059,12 +1292,20 @@ class RaumharmonikApp {
     const triangles = [];
     transforms.forEach((matrix) => {
       faceDefinitions.forEach((keys) => {
-        const points = keys.map((key) => {
-          const base = this._vectorFromKey(key);
-          return base ? base.applyMatrix4(matrix) : null;
-        });
-        if (points.some((p) => !p)) {
-          return;
+        let points;
+        if (keys.length === 4) {
+          // Split quad into two triangles
+          const p = keys.map((k) => this._vectorFromKey(k)?.applyMatrix4(matrix));
+          if (p.some((v) => !v)) return;
+          triangles.push([p[0], p[1], p[2]]);
+          triangles.push([p[0], p[2], p[3]]);
+          return; // Continue to next face definition
+        } else {
+          points = keys.map((key) => {
+            const base = this._vectorFromKey(key);
+            return base ? base.applyMatrix4(matrix) : null;
+          });
+          if (points.some((p) => !p)) return;
         }
         triangles.push(points);
       });
@@ -1146,7 +1387,7 @@ class RaumharmonikApp {
     if (keys.length !== 3) {
       return;
     }
-    const faceKey = this._faceKeyFromKeys(keys);
+    const faceKey = this._faceKeyFromKeys(keys, 3);
     if (this._hasFace(faceKey, { includeHidden: true })) {
       return;
     }
@@ -1154,7 +1395,7 @@ class RaumharmonikApp {
   }
 
   _ensureSegmentsForKeys(keys) {
-    const segmentsToAdd = [];
+    const segmentsToAdd = new Map();
     for (let i = 0; i < keys.length; i += 1) {
       for (let j = i + 1; j < keys.length; j += 1) {
         const keyA = keys[i];
@@ -1165,17 +1406,17 @@ class RaumharmonikApp {
         }
         const segment = this._createSegmentFromKeys(keyA, keyB);
         if (segment) {
-          segmentsToAdd.push(segment);
+          segmentsToAdd.set(segment.key, segment);
         }
       }
     }
-    if (segmentsToAdd.length) {
-      this._commitSegments(segmentsToAdd);
+    if (segmentsToAdd.size > 0) {
+      this._commitSegments(Array.from(segmentsToAdd.values()));
     }
   }
 
   _commitManualFace(keys, { recordHistory = true } = {}) {
-    const faceKey = this._faceKeyFromKeys(keys);
+    const faceKey = this._faceKeyFromKeys(keys, keys.length);
     const faceData = {
       key: faceKey,
       keys: keys.slice(),
@@ -1428,6 +1669,16 @@ class RaumharmonikApp {
       this.segmentLookup.set(segment.key, stored);
       added.push(stored);
     });
+    if (added.length > 0) {
+      added.forEach(seg => {
+        const keyA = this._pointKey(seg.start);
+        const keyB = this._pointKey(seg.end);
+        if (!this.adjacencyGraph.has(keyA)) this.adjacencyGraph.set(keyA, new Set());
+        if (!this.adjacencyGraph.has(keyB)) this.adjacencyGraph.set(keyB, new Set());
+        this.adjacencyGraph.get(keyA).add(keyB);
+        this.adjacencyGraph.get(keyB).add(keyA);
+      });
+    }
     if (added.length) {
       this._updateFaces();
     }
@@ -1536,6 +1787,24 @@ class RaumharmonikApp {
           this._updateFaces();
           this._rebuildSymmetryObjects();
         }
+        break;
+      case 'addMultipleFaces':
+        if (direction === 'undo') {
+          action.faces.forEach(face => {
+            const faceKey = this._faceKeyFromKeys(face.keys, face.keys.length);
+            this._removeFaceByKey(faceKey, { recordHistory: false });
+          });
+        }
+        // Redo is complex, so we just let the user click the button again.
+        break;
+      case 'addMultipleVolumes':
+        if (direction === 'undo') {
+          action.volumes.forEach(volume => {
+            const volumeKey = this._volumeKeyFromKeys(volume.keys);
+            this._removeVolumeByKey(volumeKey, { recordHistory: false });
+          });
+        }
+        // Redo is complex, so we just let the user click the button again.
         break;
       default:
         break;
@@ -1779,71 +2048,14 @@ class RaumharmonikApp {
 
   _updateFaces() {
     const detectedFaces = new Map();
-    if (this.baseSegments.length >= 3) {
-      const adjacency = new Map();
-      const addEdge = (a, b) => {
-        if (!adjacency.has(a)) {
-          adjacency.set(a, new Set());
-        }
-        adjacency.get(a).add(b);
-      };
-      this.baseSegments.forEach((segment) => {
-        const keyA = this._pointKey(segment.start);
-        const keyB = this._pointKey(segment.end);
-        addEdge(keyA, keyB);
-        addEdge(keyB, keyA);
-      });
-      const faceSet = new Set();
-      adjacency.forEach((neighborsA, keyA) => {
-        neighborsA.forEach((keyB) => {
-          if (keyB <= keyA) {
-            return;
-          }
-          const neighborsB = adjacency.get(keyB);
-          if (!neighborsB) {
-            return;
-          }
-          neighborsB.forEach((keyC) => {
-            if (keyC <= keyB || keyC === keyA) {
-              return;
-            }
-            const neighborsC = adjacency.get(keyC);
-            if (!neighborsC || !neighborsC.has(keyA)) {
-              return;
-            }
-            const sortedKeys = [keyA, keyB, keyC].sort();
-            const faceKey = sortedKeys.join('#');
-            if (faceSet.has(faceKey) || this.hiddenFaces.has(faceKey)) {
-              return;
-            }
-            const pA = this._vectorFromKey(sortedKeys[0]);
-            const pB = this._vectorFromKey(sortedKeys[1]);
-            const pC = this._vectorFromKey(sortedKeys[2]);
-            if (!pA || !pB || !pC) {
-              return;
-            }
-            const ab = new THREE.Vector3().subVectors(pB, pA);
-            const ac = new THREE.Vector3().subVectors(pC, pA);
-            const areaVec = new THREE.Vector3().crossVectors(ab, ac);
-            if (areaVec.lengthSq() < 1e-6) {
-              return;
-            }
-            faceSet.add(faceKey);
-            if (!this.manualFaces.has(faceKey)) {
-              detectedFaces.set(faceKey, {
-                key: faceKey,
-                keys: sortedKeys,
-                source: 'auto',
-                isRegular: this._isEquilateralFace(sortedKeys),
-              });
-            }
-          });
-        });
-      });
-      this.adjacencyGraph = adjacency;
-    } else {
-      this.adjacencyGraph = new Map();
-    }
+
+    const allFoundFaces = this._findAllClosedFaces();
+    allFoundFaces.forEach(faceKeys => {
+      const faceKey = this._faceKeyFromKeys(faceKeys, faceKeys.length);
+      if (!this.manualFaces.has(faceKey) && !this.hiddenFaces.has(faceKey)) {
+        detectedFaces.set(faceKey, { key: faceKey, keys: faceKeys, source: 'auto' });
+      }
+    });
 
     const combinedFaces = [];
     detectedFaces.forEach((face) => {
@@ -1854,7 +2066,7 @@ class RaumharmonikApp {
       if (this.hiddenFaces.has(key)) {
         return;
       }
-      if (!face || !Array.isArray(face.keys) || face.keys.length !== 3) {
+      if (!face || !Array.isArray(face.keys) || (face.keys.length !== 3 && face.keys.length !== 4)) {
         this.manualFaces.delete(key);
         return;
       }
@@ -1863,7 +2075,11 @@ class RaumharmonikApp {
         this.manualFaces.delete(key);
         return;
       }
-      const isRegular = this._isEquilateralFace(face.keys);
+      let isRegular = false;
+      if (face.keys.length === 3) {
+        isRegular = this._isEquilateralFace(face.keys);
+      }
+      // Could add regularity check for quads here if needed
       face.isRegular = isRegular;
       const enriched = {
         key,
@@ -1875,7 +2091,7 @@ class RaumharmonikApp {
     });
 
     this.baseFaces = combinedFaces;
-    this._updateVolumes(this.adjacencyGraph);
+    this._updateVolumes();
   }
 
   _updateVolumes(adjacency) {
