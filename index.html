@@ -17,27 +17,18 @@
 </head>
 <body>
   <div class="app-shell">
-    <header class="top-bar glass-panel">
-      <div class="brand">
-        <span class="brand-icon material-icons-outlined" aria-hidden="true">all_inclusive</span>
-        <div class="brand-copy">
-          <h1>Space Harmony</h1>
-          <p>World of Forms</p>
-        </div>
-      </div>
-      <button type="button" id="theme-toggle" class="icon-button" title="Toggle Theme" aria-label="Toggle Color Scheme">
-        <span class="material-icons-outlined" aria-hidden="true">dark_mode</span>
-      </button>
-    </header>
-
     <main class="workspace-grid">
       <section class="canvas-card glass-panel">
         <header class="card-header">
           <div class="card-title">
-            <span class="material-icons-outlined" aria-hidden="true">view_in_ar</span>
-            <h2>Workspace</h2>
+            <h2>Space Harmony</h2>
           </div>
-          <span class="canvas-status" id="face-count">Faces: 0 | Volumes: 0</span>
+          <div class="card-actions">
+            <span class="canvas-status" id="face-count">Faces: 0 | Volumes: 0</span>
+            <button type="button" id="theme-toggle" class="icon-button" title="Toggle Theme" aria-label="Toggle Color Scheme">
+              <span class="material-icons-outlined" aria-hidden="true">dark_mode</span>
+            </button>
+          </div>
         </header>
         <div id="canvas-container" class="canvas-frame">
           <canvas id="three-canvas" width="720" height="720"></canvas>
