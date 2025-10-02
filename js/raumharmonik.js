@@ -413,7 +413,7 @@ class RaumharmonikApp {
 
     const applyMaterialTheme = (theme) => {
       const isDark = theme === 'dark';
-      const lineHex = isDark ? 0xdddddd : 0x222222;
+      const lineHex = isDark ? 0xffffff : 0x222222;
       const pointHex = isDark ? 0xf0f0f0 : 0x111111;
       const faceHex = isDark ? 0xffffff : 0x8c8c8c;
       const volumeHex = isDark ? 0xffffff : 0x8c8c8c;
@@ -1990,7 +1990,7 @@ class RaumharmonikApp {
     }
     const faceCount = this.baseFaces.length;
     const volumeCount = this.baseVolumes ? this.baseVolumes.length : 0;
-    this.faceCountElement.textContent = 'Flächen: ' + faceCount + ' | Volumen: ' + volumeCount;
+    this.faceCountElement.textContent = 'Faces: ' + faceCount + ' | Volumes: ' + volumeCount;
   }
 
   _clearSegments() {
