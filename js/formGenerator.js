@@ -114,38 +114,115 @@ function _applySymmetry(form, symmetryType) {}
 
 function _validateForm(form) {
     const { points, lines } = form;
-    const closedLoops = { triangles: [] };
 
-    if (points.length < 3 || lines.length < 3) {
-        return { faces: 0, volumes: 0, isConnected: points.length > 1, symmetryProperties: "C1", closedLoops };
+    if (points.length < 3 || lines.length < 2) {
+        return { faces: 0, volumes: 0, isConnected: points.length > 1, symmetryProperties: "C1", closedLoops: [] };
     }
 
-    const lineSet = new Set();
+    const pointIndexMap = new Map(points.map((p, i) => [p, i]));
+    const adjList = new Map(points.map((_, i) => [i, []]));
+
     for (const line of lines) {
-        const key = [ [line.start.x, line.start.y, line.start.z].join(','), [line.end.x, line.end.y, line.end.z].join(',') ].sort().join('-');
-        lineSet.add(key);
+        const startIndex = pointIndexMap.get(line.start);
+        const endIndex = pointIndexMap.get(line.end);
+        if (startIndex !== undefined && endIndex !== undefined && startIndex !== endIndex) {
+            adjList.get(startIndex).push(endIndex);
+            adjList.get(endIndex).push(startIndex);
+        }
     }
 
-    const hasLine = (p1, p2) => {
-        const key = [ [p1.x, p1.y, p1.z].join(','), [p2.x, p2.y, p2.z].join(',') ].sort().join('-');
-        return lineSet.has(key);
-    };
+    const allCycles = [];
+    const uniqueCycles = new Set();
 
-    for (let i = 0; i < points.length; i++) {
-        for (let j = i + 1; j < points.length; j++) {
-            for (let k = j + 1; k < points.length; k++) {
-                const p1 = points[i], p2 = points[j], p3 = points[k];
-                if (hasLine(p1, p2) && hasLine(p2, p3) && hasLine(p3, p1)) {
-                    if (!_arePointsCollinear(p1, p2, p3)) {
-                        closedLoops.triangles.push([p1, p2, p3]);
+    function findNewCycles(startNode) {
+        const stack = [[startNode, [startNode]]]; // Stack stores [currentNode, currentPath] 
+        
+        while (stack.length > 0) {
+            const [u, path] = stack.pop();
+            const neighbors = adjList.get(u) || [];
+
+            for (const v of neighbors) {
+                // Avoid going back immediately in the path
+                if (path.length > 1 && v === path[path.length - 2]) {
+                    continue;
+                }
+
+                if (v === startNode && path.length >= 3) {
+                    // Found a cycle returning to the start node
+                    const cycle = [...path];
+                    const canonical = cycle.sort((a, b) => a - b).join('-');
+                    if (!uniqueCycles.has(canonical)) {
+                        uniqueCycles.add(canonical);
+                        allCycles.push(cycle.map(index => points[index]));
+                    }
+                } else if (!path.includes(v)) {
+                    // Continue traversal
+                    const newPath = [...path, v];
+                    // Simple loop prevention to keep paths from becoming excessively long
+                    if (newPath.length <= points.length) {
+                       stack.push([v, newPath]);
                     }
                 }
             }
         }
     }
+
+    for (let i = 0; i < points.length; i++) {
+        findNewCycles(i);
+    }
+
+    const validFaces = allCycles.filter(cycle => {
+        if (cycle.length < 3) return false;
+        // Check if all points in the cycle are collinear.
+        // We only need to find one non-collinear triplet to confirm it's a valid 2D face.
+        for (let i = 2; i < cycle.length; i++) {
+            if (!_arePointsCollinear(cycle[0], cycle[1], cycle[i])) {
+                return true; // This cycle forms a non-flat polygon.
+            }
+        }
+        return false; // All points were collinear.
+    });
     
-    const faceCount = closedLoops.triangles.length;
-    return { faces: faceCount, volumes: 0, isConnected: true, symmetryProperties: "C1", closedLoops };
+    // Check for graph connectivity using a simple traversal (like BFS or DFS)
+    let isConnected = true;
+    if (points.length > 0) {
+        const visited = new Set();
+        const q = [0];
+        visited.add(0);
+        let head = 0;
+        while(head < q.length) {
+            const u = q[head++];
+            for(const v of (adjList.get(u) || [])) {
+                if(!visited.has(v)) {
+                    visited.add(v);
+                    q.push(v);
+                }
+            }
+        }
+        // A graph is connected if the traversal visited all points that have lines connected to them.
+        const pointsWithLines = new Set();
+        lines.forEach(line => {
+            const startIdx = pointIndexMap.get(line.start);
+            const endIdx = pointIndexMap.get(line.end);
+            if (startIdx !== undefined) pointsWithLines.add(startIdx);
+            if (endIdx !== undefined) pointsWithLines.add(endIdx);
+        });
+        
+        if (pointsWithLines.size > 0) {
+            isConnected = Array.from(pointsWithLines).every(pIdx => visited.has(pIdx));
+        } else {
+            isConnected = points.length <= 1;
+        }
+    }
+
+
+    return {
+        faces: validFaces.length,
+        volumes: 0,
+        isConnected: isConnected,
+        symmetryProperties: "C1",
+        closedLoops: validFaces
+    };
 }
 
 function _arePointsCollinear(p1, p2, p3) {
@@ -154,7 +231,9 @@ function _arePointsCollinear(p1, p2, p3) {
     const crossProductX = v1.y * v2.z - v1.z * v2.y;
     const crossProductY = v1.z * v2.x - v1.x * v2.z;
     const crossProductZ = v1.x * v2.y - v1.y * v2.x;
-    return crossProductX === 0 && crossProductY === 0 && crossProductZ === 0;
+    // Use an epsilon for robust floating point comparison, though for grid points it might not be strictly necessary.
+    const epsilon = 1e-9;
+    return Math.abs(crossProductX) < epsilon && Math.abs(crossProductY) < epsilon && Math.abs(crossProductZ) < epsilon;
 }
 
 function _generateMetaData(form, options, validationResults) {
@@ -198,13 +277,13 @@ function exportAsObj(form) {
             objContent += `l ${startIndex} ${endIndex}\n`;
         }
     });
-    if (form.metadata.faceCount > 0) {
+    if (form.metadata.faceCount > 0 && form.metadata.closedLoops) {
         objContent += "\n# Faces\n";
-        form.metadata.closedLoops.triangles.forEach(triangle => {
-            const idx1 = pointIndexMap.get(triangle[0]);
-            const idx2 = pointIndexMap.get(triangle[1]);
-            const idx3 = pointIndexMap.get(triangle[2]);
-            objContent += `f ${idx1} ${idx2} ${idx3}\n`;
+        form.metadata.closedLoops.forEach(face => {
+            const indices = face.map(p => pointIndexMap.get(p)).join(' ');
+            if (indices && !indices.includes('undefined')) {
+                objContent += `f ${indices}\n`;
+            }
         });
     }
     return objContent;
@@ -265,6 +344,7 @@ async function generateMultipleForms(config = {}) {
     }
 
     console.log(`Starte Batch-Generierung von ${count} Formen (Kriterium: minFaces >= ${minFaces})...
+
 `);
     
     let generatedWithLines = 0;
@@ -283,11 +363,11 @@ async function generateMultipleForms(config = {}) {
         }
         generatedWithLines++;
 
-        const meetsCriteria = form.metadata.faces >= minFaces;
+        const meetsCriteria = form.metadata.faceCount >= minFaces;
 
         if (debugLog) {
             const status = meetsCriteria ? 'gespeichert ✅' : `übersprungen ❌ (minFaces: ${minFaces})`;
-            process.stdout.write(`\n[Debug] Form ${i}: ${form.points.length} P, ${form.lines.length} L, ${form.metadata.faces} F – ${status}`);
+            process.stdout.write(`\n[Debug] Form ${i}: ${form.points.length} P, ${form.lines.length} L, ${form.metadata.faceCount} F – ${status}`);
         }
 
         if (meetsCriteria) {
@@ -494,20 +574,19 @@ function _createHtmlPreview(outputDir, jsonFiles) {
 // --- Skript ausführen (wenn direkt mit Node.js aufgerufen) ---
 
 if (typeof require !== 'undefined' && require.main === module) {
-    
     generateMultipleForms({
-        count: 50000,
-        minFaces: 0, // 0 = alle Formen mit Linien speichern, 1 = nur die mit Flächen
-        gridSize: 3,
-        pointDensity: 3,
-        generationOptions: { 
-            singleStroke: true, 
-            minSteps: 6, // Mindestlänge des Linienzugs
-            maxSteps: 25 
-        },
+        count: 50,
+        minFaces: 0,
+        debugLog: true,
         saveJson: true,
         saveObj: true,
         generateHtmlGallery: true,
-        debugLog: false // Für detaillierte Logs auf true setzen
+        gridSize: 3,
+        pointDensity: 3,
+        generationOptions: {
+            singleStroke: true,
+            minSteps: 6,
+            maxSteps: 25
+        }
     });
 }
