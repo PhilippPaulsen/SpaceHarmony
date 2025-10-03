@@ -518,6 +518,11 @@ class RaumharmonikApp {
     this.manualVolumes = new Map();
     this.hiddenFaces = new Set();
     this.hiddenVolumes = new Set();
+    this.vertices = new Map();
+    this.edges = new Map();
+    this.vertexUsage = new Map();
+    this.vertexIdCounter = 0;
+    this.edgeIdCounter = 0;
     this.showClosedForms = true;
     this.autoCloseFaces = false;
     this.useRegularHighlight = false;
@@ -581,17 +586,26 @@ class RaumharmonikApp {
     this.symmetry.setReflection('xy', xy);
     this.symmetry.setReflection('yz', yz);
     this.symmetry.setReflection('zx', zx);
-    this._rebuildSymmetryObjects();
+    const added = this.applySymmetryToModel();
+    if (!added) {
+      this._rebuildSymmetryObjects();
+    }
   }
 
   updateRotation(axis) {
     this.symmetry.setRotation(axis);
-    this._rebuildSymmetryObjects();
+    const added = this.applySymmetryToModel();
+    if (!added) {
+      this._rebuildSymmetryObjects();
+    }
   }
 
   updateTranslation(axis, count, step) {
     this.symmetry.setTranslation(axis, count, step);
-    this._rebuildSymmetryObjects();
+    const added = this.applySymmetryToModel();
+    if (!added) {
+      this._rebuildSymmetryObjects();
+    }
   }
 
   updateShowPoints(flag) {
@@ -616,17 +630,26 @@ class RaumharmonikApp {
 
   updateInversion(flag) {
     this.symmetry.setInversion(flag);
-    this._rebuildSymmetryObjects();
+    const added = this.applySymmetryToModel();
+    if (!added) {
+      this._rebuildSymmetryObjects();
+    }
   }
 
   updateRotoreflection(config) {
     this.symmetry.setRotoreflection(config);
-    this._rebuildSymmetryObjects();
+    const added = this.applySymmetryToModel();
+    if (!added) {
+      this._rebuildSymmetryObjects();
+    }
   }
 
   updateScrew(config) {
     this.symmetry.setScrew(config);
-    this._rebuildSymmetryObjects();
+    const added = this.applySymmetryToModel();
+    if (!added) {
+      this._rebuildSymmetryObjects();
+    }
   }
 
   updateShowClosedForms(flag) {
@@ -682,6 +705,8 @@ class RaumharmonikApp {
       });
       this.future = [];
       this._rebuildSymmetryObjects();
+    } else {
+      this._updateFaceCountDisplay();
     }
   }
 
@@ -730,6 +755,8 @@ class RaumharmonikApp {
       });
       this.future = [];
       this._rebuildSymmetryObjects();
+    } else {
+      this._updateFaceCountDisplay();
     }
   }
 
@@ -1289,6 +1316,174 @@ class RaumharmonikApp {
     return sorted.join('->');
   }
 
+  _getNextVertexId() {
+    this.vertexIdCounter += 1;
+    return this.vertexIdCounter;
+  }
+
+  _getNextEdgeId() {
+    this.edgeIdCounter += 1;
+    return this.edgeIdCounter;
+  }
+
+  _hasVertex(key) {
+    return this.vertices.has(key);
+  }
+
+  _hasEdge(edgeKey) {
+    return this.edges.has(edgeKey);
+  }
+
+  _commitVertex(vector) {
+    if (!vector) {
+      return null;
+    }
+    const key = this._pointKey(vector);
+    let vertex = this.vertices.get(key);
+    if (!vertex) {
+      vertex = {
+        id: this._getNextVertexId(),
+        key,
+        position: vector.clone(),
+      };
+      this.vertices.set(key, vertex);
+    }
+    if (this.pointLookup && !this.pointLookup.has(key)) {
+      this.pointLookup.set(key, vertex.position.clone());
+    }
+    return vertex;
+  }
+
+  _incrementVertexUsage(key) {
+    const current = this.vertexUsage.get(key) || 0;
+    this.vertexUsage.set(key, current + 1);
+  }
+
+  _decrementVertexUsage(key) {
+    if (!this.vertexUsage.has(key)) {
+      return;
+    }
+    const next = this.vertexUsage.get(key) - 1;
+    if (next <= 0) {
+      this.vertexUsage.delete(key);
+      this.vertices.delete(key);
+    } else {
+      this.vertexUsage.set(key, next);
+    }
+  }
+
+  _commitEdge(segment) {
+    if (!segment || !segment.start || !segment.end) {
+      return null;
+    }
+    const startKey = this._pointKey(segment.start);
+    const endKey = this._pointKey(segment.end);
+    const edgeKey = this._segmentKeyFromKeys(startKey, endKey);
+    if (this._hasEdge(edgeKey)) {
+      return this.edges.get(edgeKey);
+    }
+    const startVertex = this._commitVertex(segment.start);
+    const endVertex = this._commitVertex(segment.end);
+    const edge = {
+      id: this._getNextEdgeId(),
+      key: edgeKey,
+      startKey,
+      endKey,
+      startVertexId: startVertex ? startVertex.id : null,
+      endVertexId: endVertex ? endVertex.id : null,
+    };
+    this.edges.set(edgeKey, edge);
+    this._incrementVertexUsage(startKey);
+    this._incrementVertexUsage(endKey);
+    return edge;
+  }
+
+  _removeEdgeByKey(edgeKey) {
+    if (!edgeKey || !this.edges.has(edgeKey)) {
+      return;
+    }
+    const edge = this.edges.get(edgeKey);
+    this.edges.delete(edgeKey);
+    if (edge) {
+      this._decrementVertexUsage(edge.startKey);
+      this._decrementVertexUsage(edge.endKey);
+    }
+  }
+
+  _isIdentityMatrix(matrix, tolerance = 1e-8) {
+    if (!matrix || !matrix.elements) {
+      return false;
+    }
+    const identity = new THREE.Matrix4();
+    const source = matrix.elements;
+    const target = identity.elements;
+    for (let i = 0; i < 16; i += 1) {
+      if (Math.abs(source[i] - target[i]) > tolerance) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  _generateSymmetryCopies(segments) {
+    if (!Array.isArray(segments) || !segments.length || !this.symmetry) {
+      return [];
+    }
+    const transforms = this.symmetry.getTransforms();
+    if (!Array.isArray(transforms) || transforms.length <= 1) {
+      return [];
+    }
+
+    const validSegments = segments.filter((segment) => segment && segment.start && segment.end);
+    if (!validSegments.length) {
+      return [];
+    }
+
+    const existingKeys = new Set();
+    if (this.segmentLookup && this.segmentLookup.size) {
+      this.segmentLookup.forEach((_, key) => existingKeys.add(key));
+    }
+    validSegments.forEach((segment) => {
+      const key = segment.key || this._segmentKey(segment.start, segment.end);
+      existingKeys.add(key);
+    });
+
+    const producedKeys = new Set();
+    const copies = [];
+
+    transforms.forEach((matrix) => {
+      if (this._isIdentityMatrix(matrix)) {
+        return;
+      }
+      validSegments.forEach((segment) => {
+        const start = segment.start.clone().applyMatrix4(matrix);
+        const end = segment.end.clone().applyMatrix4(matrix);
+        if (start.distanceToSquared(end) < 1e-10) {
+          return;
+        }
+        const key = this._segmentKey(start, end);
+        if (existingKeys.has(key) || producedKeys.has(key)) {
+          return;
+        }
+        const clone = { start, end, key, origin: 'symmetry' };
+        if (this.pointIndexLookup) {
+          const startKey = this._pointKey(start);
+          const endKey = this._pointKey(end);
+          const indexA = this.pointIndexLookup.get(startKey);
+          const indexB = this.pointIndexLookup.get(endKey);
+          if (indexA !== undefined && indexB !== undefined) {
+            clone.indices = [indexA, indexB];
+          }
+        }
+        copies.push(clone);
+        producedKeys.add(key);
+        existingKeys.add(key);
+      });
+    });
+
+    return copies;
+  }
+
   _faceKeyFromKeys(keys, size = 3) {
     const sorted = [...keys].sort();
     if (size === 4) {
@@ -1394,7 +1589,7 @@ class RaumharmonikApp {
     }).filter(Boolean);
   }
 
-  _hasFace(faceKey, { includeHidden = false } = {}) {
+  _hasFace(faceKey, { includeHidden = false, includeAuto = true } = {}) {
     if (!faceKey) {
       return false;
     }
@@ -1404,10 +1599,13 @@ class RaumharmonikApp {
     if (includeHidden && this.hiddenFaces.has(faceKey)) {
       return true;
     }
-    return this.baseFaces.some((face) => face.key === faceKey);
+    if (includeAuto) {
+      return this.baseFaces.some((face) => face.key === faceKey);
+    }
+    return false;
   }
 
-  _hasVolume(volumeKey, { includeHidden = false } = {}) {
+  _hasVolume(volumeKey, { includeHidden = false, includeAuto = true } = {}) {
     if (!volumeKey) {
       return false;
     }
@@ -1417,7 +1615,10 @@ class RaumharmonikApp {
     if (includeHidden && this.hiddenVolumes.has(volumeKey)) {
       return true;
     }
-    return this.baseVolumes.some((volume) => volume.key === volumeKey);
+    if (includeAuto) {
+      return this.baseVolumes.some((volume) => volume.key === volumeKey);
+    }
+    return false;
   }
 
   _currentStateSettings() {
@@ -1440,6 +1641,7 @@ class RaumharmonikApp {
       end: [segment.end.x, segment.end.y, segment.end.z],
       key: segment.key,
       indices: segment.indices ? segment.indices.slice() : null,
+      origin: segment.origin || 'manual',
     }));
     const snapshot = {
       meta: {
@@ -1506,7 +1708,8 @@ class RaumharmonikApp {
     const segmentObjects = (snapshot.segments || []).map((data) => {
       const start = new THREE.Vector3().fromArray(data.start);
       const end = new THREE.Vector3().fromArray(data.end);
-      return { start, end, key: this._segmentKey(start, end) };
+      const key = data.key || this._segmentKey(start, end);
+      return { start, end, key, origin: data.origin || 'manual' };
     });
     if (segmentObjects.length) {
       this._addSegments(segmentObjects);
@@ -2000,30 +2203,39 @@ class RaumharmonikApp {
 
   _addSegments(segments) {
     const added = [];
+    if (!Array.isArray(segments) || !segments.length) {
+      return added;
+    }
+    const pendingKeys = new Set();
     segments.forEach((segment) => {
-      if (!segment || this.segmentLookup.has(segment.key)) {
+      if (!segment || !segment.start || !segment.end) {
+        return;
+      }
+      const key = segment.key || this._segmentKey(segment.start, segment.end);
+      if (pendingKeys.has(key) || this.segmentLookup.has(key)) {
         return;
       }
       const stored = {
         start: segment.start.clone(),
         end: segment.end.clone(),
-        key: segment.key,
+        key,
         indices: segment.indices ? segment.indices.slice() : null,
+        origin: segment.origin || 'manual',
       };
       this.baseSegments.push(stored);
-      this.segmentLookup.set(segment.key, stored);
+      this.segmentLookup.set(key, stored);
       added.push(stored);
+      pendingKeys.add(key);
+
+      const keyA = this._pointKey(stored.start);
+      const keyB = this._pointKey(stored.end);
+      if (!this.adjacencyGraph.has(keyA)) this.adjacencyGraph.set(keyA, new Set());
+      if (!this.adjacencyGraph.has(keyB)) this.adjacencyGraph.set(keyB, new Set());
+      this.adjacencyGraph.get(keyA).add(keyB);
+      this.adjacencyGraph.get(keyB).add(keyA);
+
+      this._commitEdge(stored);
     });
-    if (added.length > 0) {
-      added.forEach(seg => {
-        const keyA = this._pointKey(seg.start);
-        const keyB = this._pointKey(seg.end);
-        if (!this.adjacencyGraph.has(keyA)) this.adjacencyGraph.set(keyA, new Set());
-        if (!this.adjacencyGraph.has(keyB)) this.adjacencyGraph.set(keyB, new Set());
-        this.adjacencyGraph.get(keyA).add(keyB);
-        this.adjacencyGraph.get(keyB).add(keyA);
-      });
-    }
     if (added.length) {
       this._updateFaces();
     }
@@ -2032,16 +2244,43 @@ class RaumharmonikApp {
 
   _removeSegments(segments) {
     let removed = false;
+    if (!Array.isArray(segments) || !segments.length) {
+      return removed;
+    }
     segments.forEach((segment) => {
       if (!segment) {
         return;
       }
-      const key = segment.key;
-      if (!this.segmentLookup.has(key)) {
+      const key = segment.key || this._segmentKey(segment.start, segment.end);
+      const stored = this.segmentLookup.get(key);
+      if (!stored) {
         return;
       }
+
+      const startVec = stored.start || segment.start;
+      const endVec = stored.end || segment.end;
+      const keyA = this._pointKey(startVec);
+      const keyB = this._pointKey(endVec);
+
       this.segmentLookup.delete(key);
       this.baseSegments = this.baseSegments.filter((existing) => existing.key !== key);
+
+      const neighborsA = this.adjacencyGraph.get(keyA);
+      if (neighborsA) {
+        neighborsA.delete(keyB);
+        if (!neighborsA.size) {
+          this.adjacencyGraph.delete(keyA);
+        }
+      }
+      const neighborsB = this.adjacencyGraph.get(keyB);
+      if (neighborsB) {
+        neighborsB.delete(keyA);
+        if (!neighborsB.size) {
+          this.adjacencyGraph.delete(keyB);
+        }
+      }
+
+      this._removeEdgeByKey(this._segmentKeyFromKeys(keyA, keyB));
       removed = true;
     });
     if (removed) {
@@ -2050,8 +2289,23 @@ class RaumharmonikApp {
     return removed;
   }
 
-  _commitSegments(segments) {
-    const added = this._addSegments(segments);
+  _commitSegments(segments, { applySymmetry = true } = {}) {
+    const inputSegments = Array.isArray(segments)
+      ? segments.filter((segment) => segment && segment.start && segment.end)
+      : [];
+    if (!inputSegments.length) {
+      return;
+    }
+
+    let toAdd = inputSegments;
+    if (applySymmetry) {
+      const generated = this._generateSymmetryCopies(inputSegments);
+      if (generated.length) {
+        toAdd = inputSegments.concat(generated);
+      }
+    }
+
+    const added = this._addSegments(toAdd);
     if (!added.length) {
       return;
     }
@@ -2059,6 +2313,7 @@ class RaumharmonikApp {
       start: seg.start.clone(),
       end: seg.end.clone(),
       key: seg.key,
+      origin: seg.origin,
     })) });
     this.future = [];
     this._rebuildSymmetryObjects();
@@ -2174,6 +2429,21 @@ class RaumharmonikApp {
     this._applyAction(action, 'redo');
     this.history.push(action);
     this._rebuildSymmetryObjects();
+  }
+
+  applySymmetryToModel(segments = null) {
+    const sourceSegments = Array.isArray(segments)
+      ? segments
+      : this.baseSegments.filter((segment) => segment && segment.origin === 'manual');
+    if (!sourceSegments || !sourceSegments.length) {
+      return 0;
+    }
+    const copies = this._generateSymmetryCopies(sourceSegments);
+    if (!copies.length) {
+      return 0;
+    }
+    this._commitSegments(copies, { applySymmetry: false });
+    return copies.length;
   }
 
   generateRandomForm(count = null) {
@@ -2515,6 +2785,23 @@ class RaumharmonikApp {
   }
 
   _clearSegments() {
+    if (this.vertices) {
+      this.vertices.clear();
+    } else {
+      this.vertices = new Map();
+    }
+    if (this.edges) {
+      this.edges.clear();
+    } else {
+      this.edges = new Map();
+    }
+    if (this.vertexUsage) {
+      this.vertexUsage.clear();
+    } else {
+      this.vertexUsage = new Map();
+    }
+    this.vertexIdCounter = 0;
+    this.edgeIdCounter = 0;
     this.baseSegments = [];
     if (this.segmentLookup) {
       this.segmentLookup.clear();
@@ -2993,53 +3280,53 @@ class RaumharmonikApp {
     if (this.showLines && this.baseSegments.length) {
       if (this.useCurvedLines) {
         const lineGroup = new THREE.Group();
-        transforms.forEach((matrix) => {
-          this.baseSegments.forEach((segment) => {
-            const start = segment.start.clone().applyMatrix4(matrix);
-            const end = segment.end.clone().applyMatrix4(matrix);
-            const dir = new THREE.Vector3().subVectors(end, start);
-            const length = dir.length();
-            if (length < 1e-6) {
-              return;
-            }
-            dir.normalize();
-            let normal = new THREE.Vector3(0, 1, 0).cross(dir);
-            if (normal.lengthSq() < 1e-6) {
-              normal = new THREE.Vector3(1, 0, 0).cross(dir);
-            }
-            if (normal.lengthSq() < 1e-6) {
-              normal = new THREE.Vector3(0, 0, 1);
-            }
-            normal.normalize();
-            const mid = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
-            const control = mid.clone().addScaledVector(normal, length * 0.2);
-            const curve = new THREE.QuadraticBezierCurve3(start, control, end);
-            const points = curve.getPoints(16);
-            const positions = new Float32Array(points.length * 3);
-            points.forEach((pt, idx) => {
-              positions[idx * 3] = pt.x;
-              positions[idx * 3 + 1] = pt.y;
-              positions[idx * 3 + 2] = pt.z;
-            });
-            const geometry = new THREE.BufferGeometry();
-            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            const line = new THREE.Line(geometry, this.curvedLineMaterial);
-            lineGroup.add(line);
+        this.baseSegments.forEach((segment) => {
+          const start = segment.start.clone();
+          const end = segment.end.clone();
+          const dir = new THREE.Vector3().subVectors(end, start);
+          const length = dir.length();
+          if (length < 1e-6) {
+            return;
+          }
+          dir.normalize();
+          let normal = new THREE.Vector3(0, 1, 0).cross(dir);
+          if (normal.lengthSq() < 1e-6) {
+            normal = new THREE.Vector3(1, 0, 0).cross(dir);
+          }
+          if (normal.lengthSq() < 1e-6) {
+            normal = new THREE.Vector3(0, 0, 1);
+          }
+          normal.normalize();
+          const mid = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
+          const control = mid.clone().addScaledVector(normal, length * 0.2);
+          const curve = new THREE.QuadraticBezierCurve3(start, control, end);
+          const points = curve.getPoints(16);
+          const positions = new Float32Array(points.length * 3);
+          points.forEach((pt, idx) => {
+            positions[idx * 3] = pt.x;
+            positions[idx * 3 + 1] = pt.y;
+            positions[idx * 3 + 2] = pt.z;
           });
+          const geometry = new THREE.BufferGeometry();
+          geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+          const line = new THREE.Line(geometry, this.curvedLineMaterial);
+          lineGroup.add(line);
         });
         if (lineGroup.children.length) {
           group.add(lineGroup);
         }
       } else {
         const positions = [];
-        transforms.forEach((matrix) => {
-          this.baseSegments.forEach((segment) => {
-            const start = segment.start.clone().applyMatrix4(matrix);
-            const end = segment.end.clone().applyMatrix4(matrix);
-            positions.push(start.x, start.y, start.z, end.x, end.y, end.z);
-          });
+        this.baseSegments.forEach((segment) => {
+          positions.push(
+            segment.start.x,
+            segment.start.y,
+            segment.start.z,
+            segment.end.x,
+            segment.end.y,
+            segment.end.z
+          );
         });
-
         if (positions.length) {
           const geometry = new THREE.BufferGeometry();
           geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -3080,10 +3367,8 @@ class RaumharmonikApp {
         });
       });
       if (baseEntries.length) {
-        transforms.forEach((matrix) => {
-          baseEntries.forEach(({ geometry, face }) => {
+        baseEntries.forEach(({ geometry, face }) => {
           const patch = geometry.clone();
-          patch.applyMatrix4(matrix);
           patch.computeVertexNormals();
           const material = this.useRegularHighlight
             ? (face.isRegular ? this.faceRegularMaterial : this.faceHighlightMaterial)
@@ -3093,10 +3378,9 @@ class RaumharmonikApp {
             type: 'face',
             faceKey: face.key,
             source: face.source,
-            };
-            this.pickableMeshes.push(mesh);
-            faceGroup.add(mesh);
-          });
+          };
+          this.pickableMeshes.push(mesh);
+          faceGroup.add(mesh);
         });
       }
       baseEntries.forEach(({ geometry }) => geometry.dispose());
@@ -3139,10 +3423,8 @@ class RaumharmonikApp {
         });
       });
       if (baseEntries.length) {
-        transforms.forEach((matrix) => {
-          baseEntries.forEach(({ geometry, volume, faceKeys }) => {
+        baseEntries.forEach(({ geometry, volume, faceKeys }) => {
           const patch = geometry.clone();
-          patch.applyMatrix4(matrix);
           patch.computeVertexNormals();
           const material = this.useRegularHighlight
             ? (volume.isRegular ? this.volumeRegularMaterial : this.volumeHighlightMaterial)
@@ -3152,11 +3434,10 @@ class RaumharmonikApp {
             type: 'volumeFace',
             volumeKey: volume.key,
             faceKey: faceKeys.slice().sort().join('#'),
-              source: volume.source,
-            };
-            this.pickableMeshes.push(mesh);
-            volumeGroup.add(mesh);
-          });
+            source: volume.source,
+          };
+          this.pickableMeshes.push(mesh);
+          volumeGroup.add(mesh);
         });
       }
       baseEntries.forEach(({ geometry }) => geometry.dispose());
