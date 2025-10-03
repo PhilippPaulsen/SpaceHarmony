@@ -60,14 +60,39 @@ Ein exploratives, interaktives 3D-Projekt zur Umsetzung von Wilhelm Ostwalds Ide
 
 ---
 
+## 💡 Optional: Erweiterungen durch Form-Generator
+
+- [ ] 🔁 **Automatische 3D-Formengalerie**
+  - Live-Generierung von `.json` + `.obj`-Dateien im Batch  
+  - Erstellung einer `index.html` mit Three.js-Vorschau aller generierten Modelle  
+  - Klickbare Vorschau + Metadatenanzeige
+
+- [ ] 🧠 **Intelligente Filterlogik**
+  - Nur Formen mit Flächen oder Volumina speichern  
+  - Optional: Nur „einzügige“ Formen mit bestimmter Linienanzahl  
+  - Symmetrieanalyse + Label-Erkennung im Generator
+
+- [ ] 📦 **Integration in Haupt-Interface**
+  - Formen aus Galerie direkt in SpaceHarmony laden  
+  - Vorschlagsfunktion für „ähnliche Formen“ basierend auf Struktur
+
+- [ ] 🎯 **KI-gestützte Bewertung (Ausblick)**
+  - Sortierung nach Regelmäßigkeit, Komplexität oder ästhetischer Wirkung  
+  - „Kuratorischer Modus“ zur Sammlung systematisch interessanter Körper
+
+---
+
 ## 📁 Projektstruktur (Kurzüberblick)
 
-raumharmonik_generator/
-├── index.html
-├── js/
-│   └── raumharmonik.js
-├── style.css
-└── ReadMe.md
+raumharmonik_generator/  
+├── index.html  
+├── js/  
+│   ├── raumharmonik.js  
+│   ├── formGenerator.js  
+│   └── generated_forms/  
+├── style.css  
+├── run_form_generator.command  
+└── ReadMe.md  
 
 ---
 
@@ -82,4 +107,4 @@ Wilhelm Ostwalds Vision einer „Welt der Formen“ basiert auf der Idee, dass O
 - Aufbau einer offenen **Form-Datenbank** mit systematischer Benennung  
 - Klassifikation aller strukturell möglichen Formen in kubischer Umgebung  
 - Publikation als **Werkzeugkasten zur Formforschung** (interaktiv, printfähig, exportierbar)  
-- Einbindung von KI zur Formanalyse, Ästhetik-Bewertung oder Optimierung
+- Einbindung von KI zur Formanalyse, Ästhetik-Bewertung oder Optimierung  
