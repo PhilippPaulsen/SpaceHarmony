@@ -14,6 +14,9 @@ class SymmetryEngine {
         xy: true,
         yz: true,
         zx: true,
+        xy_diag: false,
+        yz_diag: false,
+        zx_diag: false,
       },
       rotation: {
         axis: 'all',
@@ -118,6 +121,15 @@ class SymmetryEngine {
     }
     if (reflections.zx) {
       transforms = this._expand(transforms, this._reflectionMatrix('zx'));
+    }
+    if (reflections.xy_diag) {
+      transforms = this._expand(transforms, this._reflectionMatrix('xy_diag'));
+    }
+    if (reflections.yz_diag) {
+      transforms = this._expand(transforms, this._reflectionMatrix('yz_diag'));
+    }
+    if (reflections.zx_diag) {
+      transforms = this._expand(transforms, this._reflectionMatrix('zx_diag'));
     }
 
     if (rotation.axis !== 'none' && rotation.steps > 1) {
@@ -240,15 +252,37 @@ class SymmetryEngine {
   }
 
   _reflectionMatrix(plane) {
+    const matrix = new THREE.Matrix4();
     switch (plane) {
       case 'xy':
-        return new THREE.Matrix4().makeScale(1, 1, -1);
+        return matrix.makeScale(1, 1, -1);
       case 'yz':
-        return new THREE.Matrix4().makeScale(-1, 1, 1);
+        return matrix.makeScale(-1, 1, 1);
       case 'zx':
-        return new THREE.Matrix4().makeScale(1, -1, 1);
+        return matrix.makeScale(1, -1, 1);
+      case 'xy_diag':
+        return matrix.set(
+          0, 1, 0, 0,
+          1, 0, 0, 0,
+          0, 0, 1, 0,
+          0, 0, 0, 1
+        );
+      case 'yz_diag':
+        return matrix.set(
+          1, 0, 0, 0,
+          0, 0, 1, 0,
+          0, 1, 0, 0,
+          0, 0, 0, 1
+        );
+      case 'zx_diag':
+        return matrix.set(
+          0, 0, 1, 0,
+          0, 1, 0, 0,
+          1, 0, 0, 0,
+          0, 0, 0, 1
+        );
       default:
-        return new THREE.Matrix4().identity();
+        return matrix.identity();
     }
   }
 
