@@ -1317,6 +1317,82 @@ class RaumharmonikApp {
     return sorted.join('->');
   }
 
+  getVertexLabel(vertex, bounds = this.cubeBounds, symmetryInfo = this.symmetry?.settings) {
+    if (!vertex) {
+      return 'Unknown';
+    }
+    const vector = vertex.isVector3
+      ? vertex.clone()
+      : new THREE.Vector3(
+        Number.isFinite(vertex.x) ? vertex.x : (Array.isArray(vertex) ? vertex[0] || 0 : 0),
+        Number.isFinite(vertex.y) ? vertex.y : (Array.isArray(vertex) ? vertex[1] || 0 : 0),
+        Number.isFinite(vertex.z) ? vertex.z : (Array.isArray(vertex) ? vertex[2] || 0 : 0),
+      );
+
+    const tolerance = (bounds && bounds.tolerance) || 0.01;
+    const axisDescriptor = (value, axis) => {
+      if (Math.abs(value) <= tolerance) {
+        return `${axis}0`;
+      }
+      return value > 0 ? `${axis}+` : `${axis}-`;
+    };
+
+    const axisCodes = [
+      axisDescriptor(vector.x, 'X'),
+      axisDescriptor(vector.y, 'Y'),
+      axisDescriptor(vector.z, 'Z'),
+    ];
+    const isCenter = axisCodes.every((code) => code[1] === '0');
+    const baseLabel = isCenter ? 'C' : axisCodes.join('');
+
+    const symmetryLabels = [];
+    const reflections = symmetryInfo?.reflections || {};
+    const rotation = symmetryInfo?.rotation || {};
+
+    const reflectionPlanes = [
+      { key: 'xy', axis: 'z', label: 'S1' },
+      { key: 'yz', axis: 'x', label: 'S2' },
+      { key: 'zx', axis: 'y', label: 'S3' },
+    ];
+    reflectionPlanes.forEach(({ key, axis, label }) => {
+      if (reflections[key] && Math.abs(vector[axis]) <= tolerance) {
+        symmetryLabels.push(label);
+      }
+    });
+
+    const rotationAxisMap = { x: 'R1', y: 'R2', z: 'R3' };
+    if (rotation.axis && rotation.axis !== 'none' && rotation.steps > 1) {
+      const axes = rotation.axis === 'all' ? ['x', 'y', 'z'] : [rotation.axis];
+      axes.forEach((axis) => {
+        const otherAxes = ['x', 'y', 'z'].filter((a) => a !== axis);
+        const onAxis = otherAxes.every((other) => Math.abs(vector[other]) <= tolerance);
+        if (onAxis) {
+          const rotationLabel = rotationAxisMap[axis] || 'R';
+          if (!symmetryLabels.includes(rotationLabel)) {
+            symmetryLabels.push(rotationLabel);
+          }
+        }
+      });
+    }
+
+    if (symmetryInfo?.inversion && isCenter && !symmetryLabels.includes('I1')) {
+      symmetryLabels.push('I1');
+    }
+
+    if (symmetryInfo?.screw?.enabled) {
+      const screw = symmetryInfo.screw;
+      if (screw.axis && screw.axis !== 'none') {
+        const otherAxes = ['x', 'y', 'z'].filter((a) => a !== screw.axis);
+        const onAxis = otherAxes.every((other) => Math.abs(vector[other]) <= tolerance);
+        if (onAxis) {
+          symmetryLabels.push('H1');
+        }
+      }
+    }
+
+    return symmetryLabels.length ? `${baseLabel}_${symmetryLabels.join('_')}` : baseLabel;
+  }
+
   _getNextVertexId() {
     this.vertexIdCounter += 1;
     return this.vertexIdCounter;
@@ -1349,6 +1425,7 @@ class RaumharmonikApp {
       };
       this.vertices.set(key, vertex);
     }
+    vertex.label = this.getVertexLabel(vector, this.cubeBounds, this.symmetry?.settings);
     if (this.pointLookup && !this.pointLookup.has(key)) {
       this.pointLookup.set(key, vertex.position.clone());
     }
@@ -1409,6 +1486,53 @@ class RaumharmonikApp {
       this._decrementVertexUsage(edge.startKey);
       this._decrementVertexUsage(edge.endKey);
     }
+  }
+
+  _collectVertexLabelsForExport({ includePositions = true, asMap = false } = {}) {
+    const collection = asMap ? {} : [];
+    this.vertices.forEach((vertex, key) => {
+      if (!vertex || !vertex.position) {
+        return;
+      }
+      const label = vertex.label || this.getVertexLabel(vertex.position, this.cubeBounds, this.symmetry?.settings);
+      const entry = {
+        key,
+        label,
+      };
+      if (includePositions) {
+        entry.position = {
+          x: vertex.position.x,
+          y: vertex.position.y,
+          z: vertex.position.z,
+        };
+      }
+      if (asMap) {
+        collection[key] = entry;
+      } else {
+        collection.push(entry);
+      }
+    });
+    return collection;
+  }
+
+  _formatVertexLabelComments(vertexLabels, format = 'obj') {
+    if (!Array.isArray(vertexLabels) || !vertexLabels.length) {
+      return [];
+    }
+    const prefix = format === 'obj' ? '# ' : '# ';
+    const header = `${prefix}Vertex Labels (label = key @ x,y,z)`;
+    const lines = [header];
+    vertexLabels.forEach((entry) => {
+      if (!entry || !entry.label) {
+        return;
+      }
+      const pos = entry.position
+        ? ` ${entry.position.x.toFixed(3)},${entry.position.y.toFixed(3)},${entry.position.z.toFixed(3)}`
+        : '';
+      const keyPart = entry.key ? ` ${entry.key}` : '';
+      lines.push(`${prefix}${entry.label}${keyPart}${pos}`);
+    });
+    return lines;
   }
 
   _isIdentityMatrix(matrix, tolerance = 1e-8) {
@@ -1921,6 +2045,10 @@ class RaumharmonikApp {
       options.extension = `.${options.extension}`;
     }
 
+    const vertexLabels = Array.isArray(options.vertexLabels)
+      ? options.vertexLabels
+      : (options.includeVertexLabels === false ? [] : this._collectVertexLabelsForExport({ includePositions: true }));
+
     const filename = this.getFormLabel(form, { extension: options.extension });
 
     let content;
@@ -1939,6 +2067,13 @@ class RaumharmonikApp {
         },
         data: options.data !== undefined ? options.data : (form && form.data !== undefined ? form.data : form),
       };
+      if (vertexLabels.length) {
+        payload.meta.vertexLabels = vertexLabels;
+        payload.meta.properties.vertexLabels = vertexLabels;
+      }
+      if (options.meta && typeof options.meta === 'object') {
+        payload.meta = { ...payload.meta, ...options.meta };
+      }
       content = JSON.stringify(payload, null, 2);
       if (!mimeType) {
         mimeType = 'application/json';
@@ -1963,7 +2098,13 @@ class RaumharmonikApp {
       gridSize: this.gridDivisions,
       elementCount: this.baseSegments.length + this.baseFaces.length + this.baseVolumes.length,
     };
-    this.downloadForm(formInfo, { extension: '.json', data: snapshot, mimeType: 'application/json' });
+    const vertexLabels = this._collectVertexLabelsForExport({ includePositions: true });
+    this.downloadForm(formInfo, {
+      extension: '.json',
+      data: snapshot,
+      mimeType: 'application/json',
+      vertexLabels,
+    });
   }
 
   async importFromJSON(file) {
@@ -2070,6 +2211,13 @@ class RaumharmonikApp {
       ...vertices,
       ...faces,
     ];
+    const vertexLabels = this._collectVertexLabelsForExport({ includePositions: true });
+    const labelComments = this._formatVertexLabelComments(vertexLabels, 'obj');
+    const content = [
+      lines[0],
+      ...labelComments,
+      ...lines.slice(1),
+    ].join('\n');
     const formInfo = {
       type: this.baseVolumes.length ? 'volume' : 'face',
       gridSize: this.gridDivisions,
@@ -2077,7 +2225,12 @@ class RaumharmonikApp {
       faceKeys: faces,
       elementCount: faces.length,
     };
-    this.downloadForm(formInfo, { extension: '.obj', content: lines.join('\n'), mimeType: 'text/plain' });
+    this.downloadForm(formInfo, {
+      extension: '.obj',
+      content,
+      mimeType: 'text/plain',
+      vertexLabels,
+    });
   }
 
   exportToSTL() {
@@ -2100,13 +2253,25 @@ class RaumharmonikApp {
       lines.push('  endfacet');
     });
     lines.push('endsolid Raumharmonik');
+    const vertexLabels = this._collectVertexLabelsForExport({ includePositions: true });
+    const labelComments = this._formatVertexLabelComments(vertexLabels, 'stl');
+    const content = [
+      lines[0],
+      ...labelComments,
+      ...lines.slice(1),
+    ].join('\n');
     const formInfo = {
       type: this.baseVolumes.length ? 'volume' : 'face',
       gridSize: this.gridDivisions,
       elementCount: triangles.length,
       faceKeys: this.baseFaces.map((face) => face.keys),
     };
-    this.downloadForm(formInfo, { extension: '.stl', content: lines.join('\n'), mimeType: 'text/plain' });
+    this.downloadForm(formInfo, {
+      extension: '.stl',
+      content,
+      mimeType: 'text/plain',
+      vertexLabels,
+    });
   }
 
   _autoCloseFromSelection() {
