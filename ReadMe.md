@@ -31,26 +31,32 @@ Ein exploratives, interaktives 3D-Projekt zur Umsetzung von Wilhelm Ostwalds Ide
 - ✅ Zufallsgenerator für neue Linienkonfigurationen  
 - ✅ Presets: Würfelrahmen, Tetraeder, Diagonalkreuz, Stern  
 - ✅ Automatische Erkennung geschlossener Flächen (Dreiecke) und Volumina (Tetraeder)  
-- ✅ Rendering von Linien, Flächen und Volumen mit transparentem Shading und Punkt-Highlighting
+- ✅ Rendering von Linien, Flächen und Volumen mit transparentem Shading und Punkt-Highlighting  
+- ✅ Light/Dark Mode umschaltbar  
+- ✅ Export als `.json`, `.obj`, `.stl` mit eingebetteter Metadatenstruktur  
+- ✅ Session-spezifisches Labeling nach **Ostwald/Hinterreiter-System**:
+  - Z. B. `V1_6A.obj` für erstes Volumen mit 6 Kantenpunkten, Variante A  
+  - Vertex-Labels auf Basis ihrer **symmetrischen Lage im Raum** (`X0_Y+_Z-`, `C`, `X+_S1` etc.)  
+  - Labels werden mit Positionsdaten in den Export-Dateien eingebettet
 
 ---
 
 ## 🔄 Geplante Features (nächste Schritte)
 
-### 1. **Erweiterung des Form-Generators**
-- [ ] Optionale **automatische Flächen- und Volumenschließung**
-- [ ] Möglichkeit, **Flächen manuell zu definieren**
-- [ ] Erweiterte **kurvige Formen** (benutzerdefinierte Splines, Kontrollpunkte)
+### 1. **Form-Generator & Analyse**
+- [ ] Vollständige automatische Flächen-/Volumenschließung auch für symmetrisch erzeugte Linien  
+- [ ] Klassifikation nach Formtypen (offen, geschlossen, symmetrisch, regulär)  
+- [ ] Umgekehrter Weg: **Eingabe von Labels oder Parametern zur Form-Generierung**
 
-### 2. **Ästhetische Kontrolle & Analyse**
-- [ ] Farbcodierung nach Symmetrie, Regelmäßigkeit
-- [ ] Exportfunktionen (PNG, SVG, GLB)
-- [ ] „Ästhetik-Modus“ nach Ostwald
+### 2. **Katalogisierung & Systematik**
+- [ ] Generierung sämtlicher **symmetrisch möglicher Konfigurationen** im Raum  
+- [ ] Benennung nach festen Regeln (Hinterreiter-System)  
+- [ ] Export benannter Formen zur Weiterverarbeitung in Katalog, Buch, Galerie
 
-### 3. **Interaktion & UI**
-- [ ] Tastenkürzel für zentrale Aktionen
-- [ ] Vorschau visueller Transformationen
-- [ ] Hover-Highlights & Kontextaktionen für Punkte
+### 3. **UX & Interface**
+- [ ] Minimalistisches Sidebar-Layout mit Icons, Slidern, Tooltips  
+- [ ] Kontextsensitives Onboarding / Hilfe  
+- [ ] Verbesserung des Responsive Designs für Tablet & Querformat
 
 ---
 
@@ -73,6 +79,7 @@ Wilhelm Ostwalds Vision einer „Welt der Formen“ basiert auf der Idee, dass O
 
 ## 🧭 Langfristige Vision
 
-- Aufbau einer offenen **Form-Datenbank**  
-- Klassifikation von Formtypen  
-- Veröffentlichung als **Lehr- und Analysewerkzeug** für Kunst, Gestaltung, Mathematik, Philosophie
+- Aufbau einer offenen **Form-Datenbank** mit systematischer Benennung  
+- Klassifikation aller strukturell möglichen Formen in kubischer Umgebung  
+- Publikation als **Werkzeugkasten zur Formforschung** (interaktiv, printfähig, exportierbar)  
+- Einbindung von KI zur Formanalyse, Ästhetik-Bewertung oder Optimierung
