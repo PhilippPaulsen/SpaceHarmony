@@ -84,6 +84,7 @@ Ein exploratives, interaktives 3D-Projekt zur Umsetzung von Wilhelm Ostwalds Ide
 
 ## 📁 Projektstruktur (Kurzüberblick)
 
+```
 raumharmonik_generator/  
 ├── index.html  
 ├── js/  
@@ -93,6 +94,7 @@ raumharmonik_generator/
 ├── style.css  
 ├── run_form_generator.command  
 └── ReadMe.md  
+```
 
 ---
 
@@ -108,3 +110,5 @@ Wilhelm Ostwalds Vision einer „Welt der Formen“ basiert auf der Idee, dass O
 - Klassifikation aller strukturell möglichen Formen in kubischer Umgebung  
 - Publikation als **Werkzeugkasten zur Formforschung** (interaktiv, printfähig, exportierbar)  
 - Einbindung von KI zur Formanalyse, Ästhetik-Bewertung oder Optimierung  
+
+*Letzte Aktualisierung: 2025-10-03*
