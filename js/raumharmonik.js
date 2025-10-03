@@ -353,6 +353,8 @@ class SymmetryEngine {
   }
 }
 
+const APP_SNAPSHOT_VERSION = '1.0.0';
+
 class RaumharmonikApp {
   constructor(container) {
     this.container = container;
@@ -533,7 +535,7 @@ class RaumharmonikApp {
     this.hoveredType = null;
     this.pointerDownHit = null;
     this._keyboardHandler = (event) => this._onKeyDown(event);
-    this.snapshotVersion = '1.0.0';
+    this.snapshotVersion = APP_SNAPSHOT_VERSION;
 
     this._addCubeFrame();
     this._setupLighting();
@@ -1792,17 +1794,55 @@ class RaumharmonikApp {
     return snapshot;
   }
 
-  _deserializeSnapshot(snapshot) {
-    if (!snapshot || typeof snapshot !== 'object') {
-      throw new Error('Ungültiger Snapshot');
-    }
-    const { settings } = snapshot;
-    const expectedVersion = this.snapshotVersion.split('.')[0];
-    const snapshotVersion = snapshot.meta && snapshot.meta.version ? String(snapshot.meta.version) : '0.0.0';
-    if (String(snapshotVersion).split('.')[0] !== expectedVersion) {
-      console.warn('Snapshot-Version weicht ab:', snapshotVersion, '!=', this.snapshotVersion);
+  _migrateSnapshot(snapshot) {
+    let effectiveSnapshot = { ...snapshot };
+
+    // Handle wrapped snapshot: { meta:..., data: {<snapshot_content>} }
+    if (effectiveSnapshot.data && typeof effectiveSnapshot.data === 'object' && effectiveSnapshot.data.settings && Array.isArray(effectiveSnapshot.data.segments)) {
+      console.log('[migrateSnapshot] Detected wrapped snapshot. Unwrapping from "data" property.');
+      const outerMeta = effectiveSnapshot.meta || {};
+      effectiveSnapshot = effectiveSnapshot.data;
+      if (!effectiveSnapshot.meta) effectiveSnapshot.meta = {};
+      // Merge meta, giving preference to the outer one if keys conflict
+      effectiveSnapshot.meta = { ...effectiveSnapshot.meta, ...outerMeta };
     }
 
+    const snapshotVersion = effectiveSnapshot.meta?.version ? String(effectiveSnapshot.meta.version) : '0.0.0';
+    const appVersion = this.snapshotVersion;
+
+    if (snapshotVersion === appVersion) {
+      return effectiveSnapshot; // No further migration needed
+    }
+
+    console.warn(`[migrateSnapshot] Migrating snapshot from version ${snapshotVersion} to ${appVersion}.`);
+
+    // Ensure basic structure for older versions
+    if (snapshotVersion.startsWith('0.')) {
+      if (!effectiveSnapshot.meta) effectiveSnapshot.meta = { createdAt: new Date().toISOString() };
+      effectiveSnapshot.meta.version = appVersion; // Stamp with new version
+      if (!effectiveSnapshot.settings) effectiveSnapshot.settings = this._currentStateSettings();
+      if (!effectiveSnapshot.segments) effectiveSnapshot.segments = [];
+      if (!effectiveSnapshot.manualFaces) effectiveSnapshot.manualFaces = [];
+      if (!effectiveSnapshot.manualVolumes) effectiveSnapshot.manualVolumes = [];
+      if (!effectiveSnapshot.hiddenFaces) effectiveSnapshot.hiddenFaces = [];
+      if (!effectiveSnapshot.hiddenVolumes) effectiveSnapshot.hiddenVolumes = [];
+    }
+
+    return effectiveSnapshot;
+  }
+
+  _deserializeSnapshot(snapshot) {
+    if (!snapshot || typeof snapshot !== 'object') {
+      throw new Error('Invalid snapshot data');
+    }
+
+    // The migration logic now handles version mismatches. We can still log for transparency.
+    const snapshotVersion = snapshot?.meta?.version || 'unknown';
+    if (snapshotVersion !== this.snapshotVersion) {
+      console.warn(`[deserialize] Processing snapshot version ${snapshotVersion} (app version is ${this.snapshotVersion}). The data has been migrated.`);
+    }
+
+    const { settings } = snapshot;
     const safeSettings = Object.assign({}, this._currentStateSettings(), settings || {});
     this.updateGrid(safeSettings.gridDivisions);
     this.updateShowPoints(safeSettings.showPoints);
@@ -2111,9 +2151,14 @@ class RaumharmonikApp {
     if (!file) {
       return;
     }
-    const text = await file.text();
-    const data = JSON.parse(text);
-    this._deserializeSnapshot(data);
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const migratedData = this._migrateSnapshot(data);
+      this._deserializeSnapshot(migratedData);
+    } catch (error) {
+      console.error('Import failed:', error);
+    }
   }
 
   _collectTriangleFaces() {
