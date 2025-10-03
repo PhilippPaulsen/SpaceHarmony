@@ -523,6 +523,7 @@ class RaumharmonikApp {
     this.vertexUsage = new Map();
     this.vertexIdCounter = 0;
     this.edgeIdCounter = 0;
+    this.formLabelCounters = new Map();
     this.showClosedForms = true;
     this.autoCloseFaces = false;
     this.useRegularHighlight = false;
@@ -1774,10 +1775,195 @@ class RaumharmonikApp {
     URL.revokeObjectURL(url);
   }
 
+  _resolveFormTypeCode(form) {
+    const raw = (form && (form.type || form.kind || form.category)) || '';
+    const normalized = String(raw).toLowerCase();
+    if (normalized.startsWith('v')) {
+      return 'V';
+    }
+    if (normalized.startsWith('f')) {
+      return 'F';
+    }
+    if (Array.isArray(form?.faceKeys) || (Array.isArray(form?.keys) && form.keys.length >= 4)) {
+      return 'V';
+    }
+    return 'F';
+  }
+
+  _resolveGridSize(form) {
+    if (Number.isFinite(form?.gridSize) && form.gridSize > 0) {
+      return Math.max(1, Math.round(form.gridSize));
+    }
+    if (Number.isFinite(form?.divisions) && form.divisions > 0) {
+      return Math.max(1, Math.round(form.divisions));
+    }
+    return Math.max(1, Math.round(this.gridDivisions || 1));
+  }
+
+  _extractFormKeys(form) {
+    if (!form || typeof form !== 'object') {
+      return [];
+    }
+    const candidates = ['keys', 'points', 'vertices', 'indices'];
+    for (let i = 0; i < candidates.length; i += 1) {
+      const prop = candidates[i];
+      if (Array.isArray(form[prop]) && form[prop].length) {
+        return form[prop]
+          .map((value) => (value && value.key ? value.key : value))
+          .filter((value) => value !== null && value !== undefined);
+      }
+    }
+    return [];
+  }
+
+  _countFormElements(form) {
+    if (Number.isFinite(form?.pointCount)) {
+      return Math.max(0, Math.round(form.pointCount));
+    }
+    if (Number.isFinite(form?.elementCount)) {
+      return Math.max(0, Math.round(form.elementCount));
+    }
+    if (Array.isArray(form?.segments) && form.segments.length) {
+      return form.segments.length;
+    }
+    const keys = this._extractFormKeys(form);
+    if (keys.length) {
+      return new Set(keys.map((value) => String(value))).size;
+    }
+    if (Array.isArray(form?.faceKeys) && form.faceKeys.length) {
+      return new Set(form.faceKeys.flat().map((value) => String(value))).size;
+    }
+    return 0;
+  }
+
+  _sequenceLetters(index) {
+    const base = 26;
+    let value = Math.max(0, index);
+    let result = '';
+    do {
+      const remainder = value % base;
+      result = String.fromCharCode(65 + remainder) + result;
+      value = Math.floor(value / base) - 1;
+    } while (value >= 0);
+    return result;
+  }
+
+  // Generates a reproducible catalog label such as F3_6A with configurable extension.
+  getFormLabel(form = {}, overrides = {}) {
+    const target = form && typeof form === 'object' ? form : {};
+    const options = overrides && typeof overrides === 'object' ? overrides : {};
+    let extension = options.extension;
+    if (!extension && typeof target.extension === 'string') {
+      extension = target.extension;
+    }
+    if (!extension || typeof extension !== 'string') {
+      extension = '.json';
+    }
+    if (!extension.startsWith('.')) {
+      extension = `.${extension}`;
+    }
+
+    let baseLabel = target.__labelBase;
+    if (!baseLabel) {
+      const typeCode = this._resolveFormTypeCode(target);
+      const gridSize = this._resolveGridSize(target);
+      const elementCount = this._countFormElements(target);
+      const counterKey = `${typeCode}|${gridSize}|${elementCount}`;
+      const currentIndex = this.formLabelCounters.get(counterKey) || 0;
+      const suffix = this._sequenceLetters(currentIndex);
+      baseLabel = `${typeCode}${gridSize}_${elementCount}${suffix}`;
+      this.formLabelCounters.set(counterKey, currentIndex + 1);
+      if (target && typeof target === 'object') {
+        try {
+          Object.defineProperty(target, '__labelBase', {
+            value: baseLabel,
+            writable: true,
+            configurable: true,
+            enumerable: false,
+          });
+        } catch (error) {
+          target.__labelBase = baseLabel; // Fallback if defineProperty fails
+        }
+      }
+    }
+
+    return `${baseLabel}${extension}`;
+  }
+
+  extractFormProperties(form = {}) {
+    const keys = this._extractFormKeys(form);
+    const uniqueKeys = new Set(keys.map((value) => String(value)));
+    const typeCode = this._resolveFormTypeCode(form);
+    const isClosed = Boolean(form.isClosed || (typeCode === 'V') || (Array.isArray(form.faceKeys) && form.faceKeys.length > 0));
+    return {
+      type: typeCode === 'V' ? 'volume' : 'face',
+      gridSize: this._resolveGridSize(form),
+      uniquePointCount: uniqueKeys.size,
+      elementCount: this._countFormElements(form),
+      isClosed,
+      symmetry: form.symmetry || form.transforms || null,
+    };
+  }
+
+  // Downloads the supplied form using systematic naming; supports alternate formats via options.
+  downloadForm(form = {}, extensionOrOptions = null, extraOptions = null) {
+    let options = {};
+    if (typeof extensionOrOptions === 'string') {
+      options.extension = extensionOrOptions;
+    } else if (extensionOrOptions && typeof extensionOrOptions === 'object') {
+      options = { ...extensionOrOptions };
+    }
+    if (extraOptions && typeof extraOptions === 'object') {
+      options = { ...options, ...extraOptions };
+    }
+
+    if (options.extension && typeof options.extension === 'string' && !options.extension.startsWith('.')) {
+      options.extension = `.${options.extension}`;
+    }
+
+    const filename = this.getFormLabel(form, { extension: options.extension });
+
+    let content;
+    let mimeType = options.mimeType;
+    if (options.content !== undefined) {
+      content = options.content;
+      if (!mimeType) {
+        mimeType = typeof content === 'string' ? 'text/plain' : 'application/octet-stream';
+      }
+    } else {
+      const payload = {
+        meta: {
+          label: filename,
+          generatedAt: new Date().toISOString(),
+          properties: this.extractFormProperties(form),
+        },
+        data: options.data !== undefined ? options.data : (form && form.data !== undefined ? form.data : form),
+      };
+      content = JSON.stringify(payload, null, 2);
+      if (!mimeType) {
+        mimeType = 'application/json';
+      }
+    }
+
+    if (typeof content !== 'string') {
+      content = JSON.stringify(content, null, 2);
+      if (!mimeType) {
+        mimeType = 'application/json';
+      }
+    }
+
+    this._downloadBlob(content, filename, mimeType || 'application/octet-stream');
+    return filename;
+  }
+
   exportToJSON() {
     const snapshot = this._serializeSnapshot();
-    const content = JSON.stringify(snapshot, null, 2);
-    this._downloadBlob(content, 'raumharmonik_snapshot.json');
+    const formInfo = {
+      type: 'snapshot',
+      gridSize: this.gridDivisions,
+      elementCount: this.baseSegments.length + this.baseFaces.length + this.baseVolumes.length,
+    };
+    this.downloadForm(formInfo, { extension: '.json', data: snapshot, mimeType: 'application/json' });
   }
 
   async importFromJSON(file) {
@@ -1884,7 +2070,14 @@ class RaumharmonikApp {
       ...vertices,
       ...faces,
     ];
-    this._downloadBlob(lines.join('\n'), 'raumharmonik_export.obj', 'text/plain');
+    const formInfo = {
+      type: this.baseVolumes.length ? 'volume' : 'face',
+      gridSize: this.gridDivisions,
+      vertices,
+      faceKeys: faces,
+      elementCount: faces.length,
+    };
+    this.downloadForm(formInfo, { extension: '.obj', content: lines.join('\n'), mimeType: 'text/plain' });
   }
 
   exportToSTL() {
@@ -1907,7 +2100,13 @@ class RaumharmonikApp {
       lines.push('  endfacet');
     });
     lines.push('endsolid Raumharmonik');
-    this._downloadBlob(lines.join('\n'), 'raumharmonik_export.stl', 'text/plain');
+    const formInfo = {
+      type: this.baseVolumes.length ? 'volume' : 'face',
+      gridSize: this.gridDivisions,
+      elementCount: triangles.length,
+      faceKeys: this.baseFaces.map((face) => face.keys),
+    };
+    this.downloadForm(formInfo, { extension: '.stl', content: lines.join('\n'), mimeType: 'text/plain' });
   }
 
   _autoCloseFromSelection() {
