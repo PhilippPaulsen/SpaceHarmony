@@ -1,52 +1,52 @@
 [
   {
-    "obj": "SH_PD3_L8_F10_T0_1.obj",
-    "json": "SH_PD3_L8_F10_T0_1.json",
-    "thumbnail": "thumbnails/SH_PD3_L8_F10_T0_1.png"
+    "obj": "SH_PD6_L12_F10_T0_1.obj",
+    "json": "SH_PD6_L12_F10_T0_1.json",
+    "thumbnail": "thumbnails/SH_PD6_L12_F10_T0_1.png"
   },
   {
-    "obj": "SH_PD3_L12_F10_T0_2.obj",
-    "json": "SH_PD3_L12_F10_T0_2.json",
-    "thumbnail": "thumbnails/SH_PD3_L12_F10_T0_2.png"
+    "obj": "SH_PD6_L12_F10_T0_2.obj",
+    "json": "SH_PD6_L12_F10_T0_2.json",
+    "thumbnail": "thumbnails/SH_PD6_L12_F10_T0_2.png"
   },
   {
-    "obj": "SH_PD3_L12_F30_T0_3.obj",
-    "json": "SH_PD3_L12_F30_T0_3.json",
-    "thumbnail": "thumbnails/SH_PD3_L12_F30_T0_3.png"
+    "obj": "SH_PD6_L12_F30_T0_3.obj",
+    "json": "SH_PD6_L12_F30_T0_3.json",
+    "thumbnail": "thumbnails/SH_PD6_L12_F30_T0_3.png"
   },
   {
-    "obj": "SH_PD3_L16_F20_T0_4.obj",
-    "json": "SH_PD3_L16_F20_T0_4.json",
-    "thumbnail": "thumbnails/SH_PD3_L16_F20_T0_4.png"
+    "obj": "SH_PD6_L8_F10_T0_4.obj",
+    "json": "SH_PD6_L8_F10_T0_4.json",
+    "thumbnail": "thumbnails/SH_PD6_L8_F10_T0_4.png"
   },
   {
-    "obj": "SH_PD3_L12_F10_T0_5.obj",
-    "json": "SH_PD3_L12_F10_T0_5.json",
-    "thumbnail": "thumbnails/SH_PD3_L12_F10_T0_5.png"
+    "obj": "SH_PD6_L12_F30_T0_5.obj",
+    "json": "SH_PD6_L12_F30_T0_5.json",
+    "thumbnail": "thumbnails/SH_PD6_L12_F30_T0_5.png"
   },
   {
-    "obj": "SH_PD3_L12_F10_T0_6.obj",
-    "json": "SH_PD3_L12_F10_T0_6.json",
-    "thumbnail": "thumbnails/SH_PD3_L12_F10_T0_6.png"
+    "obj": "SH_PD6_L12_F10_T0_6.obj",
+    "json": "SH_PD6_L12_F10_T0_6.json",
+    "thumbnail": "thumbnails/SH_PD6_L12_F10_T0_6.png"
   },
   {
-    "obj": "SH_PD3_L12_F10_T0_7.obj",
-    "json": "SH_PD3_L12_F10_T0_7.json",
-    "thumbnail": "thumbnails/SH_PD3_L12_F10_T0_7.png"
+    "obj": "SH_PD6_L12_F10_T0_7.obj",
+    "json": "SH_PD6_L12_F10_T0_7.json",
+    "thumbnail": "thumbnails/SH_PD6_L12_F10_T0_7.png"
   },
   {
-    "obj": "SH_PD3_L12_F30_T0_8.obj",
-    "json": "SH_PD3_L12_F30_T0_8.json",
-    "thumbnail": "thumbnails/SH_PD3_L12_F30_T0_8.png"
+    "obj": "SH_PD6_L12_F30_T0_8.obj",
+    "json": "SH_PD6_L12_F30_T0_8.json",
+    "thumbnail": "thumbnails/SH_PD6_L12_F30_T0_8.png"
   },
   {
-    "obj": "SH_PD3_L16_F20_T0_9.obj",
-    "json": "SH_PD3_L16_F20_T0_9.json",
-    "thumbnail": "thumbnails/SH_PD3_L16_F20_T0_9.png"
+    "obj": "SH_PD6_L16_F20_T0_9.obj",
+    "json": "SH_PD6_L16_F20_T0_9.json",
+    "thumbnail": "thumbnails/SH_PD6_L16_F20_T0_9.png"
   },
   {
-    "obj": "SH_PD3_L8_F10_T0_10.obj",
-    "json": "SH_PD3_L8_F10_T0_10.json",
-    "thumbnail": "thumbnails/SH_PD3_L8_F10_T0_10.png"
+    "obj": "SH_PD6_L12_F30_T0_10.obj",
+    "json": "SH_PD6_L12_F30_T0_10.json",
+    "thumbnail": "thumbnails/SH_PD6_L12_F30_T0_10.png"
   }
 ]

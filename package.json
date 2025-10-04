@@ -6,7 +6,6 @@
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start:gallery": "serve js/generated_forms",
     "start:server": "node server.js"
   },
   "keywords": [],
@@ -17,7 +16,5 @@
     "express": "^4.19.2",
     "open": "^10.2.0"
   },
-  "devDependencies": {
-    "serve": "^14.2.3"
-  }
+  "devDependencies": {}
 }

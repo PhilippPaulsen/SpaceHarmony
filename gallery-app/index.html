@@ -94,7 +94,6 @@
 
         async function loadGallery() {
             try {
-                // Lade den Index aus dem /data Unterverzeichnis (mit Cache-Busting)
                 const response = await fetch(`/gallery/data/obj_index.json?v=${Date.now()}`);
                 if (!response.ok) {
                     throw new Error(`HTTP-Fehler: ${response.status}`);
@@ -117,7 +116,7 @@
 
                     const link = document.createElement('a');
                     link.className = 'gallery-item';
-                    link.href = 'viewer.html'; // Navigation via localStorage
+                    link.href = 'viewer.html';
 
                     link.addEventListener('click', (e) => {
                         e.preventDefault();
@@ -126,8 +125,8 @@
                     });
 
                     const thumbnail = document.createElement('img');
-                    // Pfad zum Thumbnail im /data Unterverzeichnis
-                    thumbnail.src = `/gallery/data/${fileInfo.thumbnail}`;
+                    // Cache-Busting für JEDES Bild
+                    thumbnail.src = `/gallery/data/${fileInfo.thumbnail}?v=${Date.now()}`;
                     thumbnail.alt = `Vorschau von ${fileInfo.obj}`;
                     thumbnail.onerror = () => { thumbnail.style.display = 'none'; };
 

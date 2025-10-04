@@ -1,196 +1,196 @@
 {
   "points": [
     {
-      "x": 1,
+      "x": 2.5,
       "y": 0,
       "z": 0
     },
     {
-      "x": -1,
+      "x": -2.5,
       "y": 0,
       "z": 0
     },
     {
       "x": 0,
-      "y": 1,
+      "y": 2.5,
       "z": 0
     },
     {
       "x": 0,
-      "y": -1,
+      "y": -2.5,
       "z": 0
     },
     {
       "x": 0,
       "y": 0,
-      "z": 1
+      "z": 2.5
     },
     {
       "x": 0,
       "y": 0,
-      "z": -1
+      "z": -2.5
     }
   ],
   "lines": [
     {
       "start": {
-        "x": 1,
+        "x": 2.5,
         "y": 0,
         "z": 0
       },
       "end": {
         "x": 0,
-        "y": 1,
+        "y": 2.5,
         "z": 0
       }
     },
     {
       "start": {
-        "x": 1,
+        "x": 2.5,
         "y": 0,
         "z": 0
       },
       "end": {
         "x": 0,
-        "y": -1,
+        "y": -2.5,
         "z": 0
       }
     },
     {
       "start": {
-        "x": 1,
+        "x": 2.5,
         "y": 0,
         "z": 0
       },
       "end": {
         "x": 0,
         "y": 0,
-        "z": 1
+        "z": 2.5
       }
     },
     {
       "start": {
-        "x": 1,
+        "x": 2.5,
         "y": 0,
         "z": 0
       },
       "end": {
         "x": 0,
         "y": 0,
-        "z": -1
+        "z": -2.5
       }
     },
     {
       "start": {
-        "x": -1,
+        "x": -2.5,
         "y": 0,
         "z": 0
       },
       "end": {
         "x": 0,
-        "y": 1,
-        "z": 0
-      }
-    },
-    {
-      "start": {
-        "x": -1,
-        "y": 0,
-        "z": 0
-      },
-      "end": {
-        "x": 0,
-        "y": -1,
+        "y": 2.5,
         "z": 0
       }
     },
     {
       "start": {
-        "x": -1,
+        "x": -2.5,
         "y": 0,
         "z": 0
       },
       "end": {
         "x": 0,
-        "y": 0,
-        "z": 1
+        "y": -2.5,
+        "z": 0
       }
     },
     {
       "start": {
-        "x": -1,
+        "x": -2.5,
         "y": 0,
         "z": 0
       },
       "end": {
         "x": 0,
         "y": 0,
-        "z": -1
+        "z": 2.5
       }
     },
     {
       "start": {
-        "x": 0,
-        "y": 1,
+        "x": -2.5,
+        "y": 0,
         "z": 0
       },
       "end": {
         "x": 0,
         "y": 0,
-        "z": 1
-      }
-    },
-    {
-      "start": {
-        "x": 0,
-        "y": 1,
-        "z": 0
-      },
-      "end": {
-        "x": 0,
-        "y": 0,
-        "z": -1
+        "z": -2.5
       }
     },
     {
       "start": {
         "x": 0,
-        "y": -1,
+        "y": 2.5,
         "z": 0
       },
       "end": {
         "x": 0,
         "y": 0,
-        "z": 1
+        "z": 2.5
       }
     },
     {
       "start": {
         "x": 0,
-        "y": -1,
+        "y": 2.5,
         "z": 0
       },
       "end": {
         "x": 0,
         "y": 0,
-        "z": -1
+        "z": -2.5
+      }
+    },
+    {
+      "start": {
+        "x": 0,
+        "y": -2.5,
+        "z": 0
+      },
+      "end": {
+        "x": 0,
+        "y": 0,
+        "z": 2.5
+      }
+    },
+    {
+      "start": {
+        "x": 0,
+        "y": -2.5,
+        "z": 0
+      },
+      "end": {
+        "x": 0,
+        "y": 0,
+        "z": -2.5
       }
     }
   ],
   "metadata": {
-    "id": 8,
-    "name": "SH_Form_8",
-    "generatedAt": "2025-10-04T10:55:23.632Z",
-    "gridSize": 3,
-    "pointDensity": 3,
+    "id": 5,
+    "name": "SH_Form_5",
+    "generatedAt": "2025-10-04T11:39:03.446Z",
+    "gridSize": 6,
+    "pointDensity": 6,
     "lineCount": 12,
     "faceCount": 30,
     "volumeCount": 0,
     "isClosed": false,
     "isConnected": true,
-    "symmetry": "fourFoldZ",
-    "symmetryScore": 0.8,
+    "symmetry": "mirrorXY",
+    "symmetryScore": 0.4,
     "source": "Symmetrischer Generator v1.7",
-    "notes": "Grundform: octahedron, Symmetrie: fourFoldZ"
+    "notes": "Grundform: octahedron, Symmetrie: mirrorXY"
   }
 }
