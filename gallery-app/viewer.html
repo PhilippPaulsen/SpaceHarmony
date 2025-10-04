@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SpaceHarmony - 3D-Viewer</title>
+    <style>
+        :root {
+            --background-color: #121212;
+            --text-color: #e0e0e0;
+            --border-color: #333;
+            --accent-color: #0077ff;
+            --panel-bg-color: rgba(30, 30, 30, 0.8);
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            overflow: hidden;
+        }
+        #viewer-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        #info-panel {
+            position: fixed;
+            top: 1rem;
+            left: 1rem;
+            max-width: 350px;
+            max-height: 90vh;
+            overflow-y: auto;
+            background-color: var(--panel-bg-color);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        #info-panel details summary {
+            font-size: 1.1rem;
+            font-weight: 500;
+            padding: 1rem;
+            cursor: pointer;
+            outline: none;
+            list-style: none;
+        }
+        #info-panel details summary::-webkit-details-marker { display: none; }
+        #info-panel details summary:hover {
+            background-color: rgba(255,255,255,0.1);
+        }
+        #info-panel details[open] summary {
+            border-bottom: 1px solid var(--border-color);
+        }
+        #info-panel pre {
+            font-size: 0.8rem;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin: 0;
+            padding: 1rem;
+            background-color: rgba(0,0,0,0.2);
+        }
+        #back-link {
+            position: fixed;
+            bottom: 1rem;
+            left: 1rem;
+            background-color: var(--panel-bg-color);
+            color: var(--text-color);
+            padding: 0.8rem 1.2rem;
+            border-radius: 8px;
+            text-decoration: none;
+            transition: background-color 0.2s ease;
+        }
+        #back-link:hover {
+            background-color: var(--accent-color);
+        }
+        .message-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 2rem;
+        }
+    </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.164.1/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.164.1/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+    <canvas id="viewer-canvas"></canvas>
+    
+    <div id="info-panel" style="display: none;">
+        <details>
+            <summary>Metadaten</summary>
+            <pre id="info-content"></pre>
+        </details>
+    </div>
+
+    <a href="index.html" id="back-link">← Zurück zur Galerie</a>
+
+    <div id="message-container"></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        const canvas = document.getElementById('viewer-canvas');
+        const messageContainer = document.getElementById('message-container');
+        const infoPanel = document.getElementById('info-panel');
+        const infoContent = document.getElementById('info-content');
+
+        const fileName = localStorage.getItem('selectedForm');
+
+        if (!fileName) {
+            messageContainer.innerHTML = `
+                <div class="message-overlay">
+                    <h2>Keine Datei ausgewählt.</h2>
+                    <p>Bitte gehe zurück zur <a href="index.html">Galerie</a> und wähle eine Form aus.</p>
+                </div>`;
+        } else {
+            init();
+        }
+
+        function init() {
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x121212);
+
+            const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+
+            const frustumSize = 6;
+            const aspect = window.innerWidth / window.innerHeight;
+            const camera = new THREE.OrthographicCamera(frustumSize * aspect / -2, frustumSize * aspect / 2, frustumSize / 2, frustumSize / -2, 0.1, 1000);
+            camera.position.set(5, 5, 5);
+            camera.lookAt(scene.position);
+
+            const controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            dirLight.position.set(8, 10, 5);
+            scene.add(dirLight);
+
+            const modelPath = `/gallery/data/${fileName}`;
+            const loader = new OBJLoader();
+            loader.load(
+                modelPath,
+                (object) => {
+                    const box = new THREE.Box3().setFromObject(object);
+                    const center = box.getCenter(new THREE.Vector3());
+                    object.position.sub(center);
+
+                    const size = box.getSize(new THREE.Vector3());
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    const scale = frustumSize / maxDim;
+                    object.scale.set(scale, scale, scale);
+
+                    object.traverse(child => {
+                        if (child.isMesh) {
+                            child.material = new THREE.MeshPhysicalMaterial({
+                                color: 0x0077ff,
+                                metalness: 0.2,
+                                roughness: 0.6,
+                                transparent: true,
+                                opacity: 0.85,
+                                side: THREE.DoubleSide
+                            });
+                        } else if (child.isLine) {
+                            child.material = new THREE.LineBasicMaterial({ color: 0xffffff });
+                        }
+                    });
+                    scene.add(object);
+                },
+                undefined,
+                (error) => {
+                    console.error('Fehler beim Laden des Modells:', error);
+                    messageContainer.innerHTML = `<div class="message-overlay">
+                        <h2>Modell konnte nicht geladen werden: ${fileName}</h2></div>`;
+                }
+            );
+            
+            const jsonPath = `/gallery/data/${fileName.replace('.obj', '.json')}`;
+            fetch(jsonPath)
+                .then(response => {
+                    if (!response.ok) throw new Error('JSON-Datei nicht gefunden.');
+                    return response.json();
+                })
+                .then(data => {
+                    let metadataText = `Dateiname: ${fileName}\n\n`;
+                    metadataText += JSON.stringify(data.metadata, null, 2);
+                    infoContent.textContent = metadataText;
+                    infoPanel.style.display = 'block';
+                })
+                .catch(err => {
+                    console.warn('Metadaten konnten nicht geladen werden:', err);
+                });
+
+            window.addEventListener('resize', () => {
+                const aspect = window.innerWidth / window.innerHeight;
+                camera.left = frustumSize * aspect / -2;
+                camera.right = frustumSize * aspect / 2;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            function animate() {
+                requestAnimationFrame(animate);
+                controls.update();
+                renderer.render(scene, camera);
+            }
+            animate();
+        }
+    </script>
+</body>
+</html>

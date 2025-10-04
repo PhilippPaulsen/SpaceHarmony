@@ -1,7 +1,22 @@
-
 # 🌐 Raumharmonik – Welt der Formen
 
 Ein exploratives, interaktives 3D-Projekt zur Umsetzung von Wilhelm Ostwalds Idee einer „Welt der Formen“. Ziel ist es, geometrische Strukturen im Raum zu erzeugen, zu analysieren und durch Symmetrieoperationen zu vervielfältigen – als Grundlage einer raumästhetischen Ordnung.
+
+---
+
+## Setup
+
+To generate thumbnails, the `canvas` dependency is required. Install it using npm:
+
+```bash
+npm install canvas
+```
+
+On macOS, you might need to install some additional dependencies using Homebrew:
+
+```bash
+brew install pkg-config cairo pango libpng jpeg giflib librsvg
+```
 
 ---
 

@@ -12,9 +12,7 @@
 import fs from 'fs';
 import path, { dirname } from 'path';
 import { fileURLToPath } from 'url';
-import * as THREE from 'three';
-import gl from 'gl';
-import Canvas from 'canvas';
+import { createCanvas } from 'canvas';
 import open from 'open';
 
 // --- ES6 Modul-Kontext für __dirname ---
@@ -468,63 +466,57 @@ function exportAsObj(form) {
 
 // --- 5. Batch-Generierung (Node.js) ---
 
-async function generateMultipleForms(config = {}) {
+export async function generateMultipleForms(config) {
+    console.log('[DEBUG] generateMultipleForms received config:', config);
+
     if (!fs || !path) {
         console.error("Batch-Generierung ist nur in einer Node.js-Umgebung verfügbar.");
         return;
     }
 
-    const mutableConfig = { ...config };
-
-    if (mutableConfig.debugLog && mutableConfig.count > 50) {
-        console.warn("\n⚠️  Debug-Modus: Anzahl der Formen wird auf 50 begrenzt, um die Konsole nicht zu überfluten.");
-        mutableConfig.count = 50;
-    }
-
+    // Parameter direkt aus dem config-Objekt verwenden und Standardwerte setzen, falls sie fehlen.
     const {
-        count = 50000,
-        minFaces: configMinFaces,
+        count = 10,
+        minFaces = 0,
         gridSize = 3,
         pointDensity = 3,
         generationOptions = {},
         outputDir = 'generated_forms',
         saveJson = true,
         saveObj = true,
-        generateHtmlGallery = true,
-        debugLog = false,
-        generateThumbnails = true // Neue Option
-    } = mutableConfig;
+        debugLog = true,
+        generateThumbnails = true
+    } = config;
 
-    const minFaces = typeof configMinFaces === 'number' ? configMinFaces : 0;
     const absoluteOutputDir = path.join(__dirname, outputDir);
+    const thumbnailsDir = path.join(absoluteOutputDir, 'thumbnails');
 
     try {
         if (fs.existsSync(absoluteOutputDir)) {
             fs.rmSync(absoluteOutputDir, { recursive: true, force: true });
         }
         fs.mkdirSync(absoluteOutputDir, { recursive: true });
+        if (generateThumbnails) {
+            fs.mkdirSync(thumbnailsDir, { recursive: true });
+        }
         console.log(`Ausgabeverzeichnis '${absoluteOutputDir}' zurückgesetzt.`);
 
-        if (generateThumbnails) {
-            const thumbDir = path.join(absoluteOutputDir, 'thumbnails');
-            fs.mkdirSync(thumbDir, { recursive: true });
-        }
     } catch (error) {
         console.error(`Fehler beim Zurücksetzen des Verzeichnisses: ${error.message}`);
         return;
     }
 
-    console.log(`Starte Batch-Generierung von ${count} Formen (Kriterium: minFaces >= ${minFaces})...
-`);
-    
+    console.log(`Starte Batch-Generierung von ${count} Formen mit gridSize=${gridSize} (Kriterium: minFaces >= ${minFaces})...\n`);
+
     let generatedWithLines = 0;
     let meetsCriteriaCount = 0;
     const savedFiles = [];
 
     for (let i = 1; i <= count; i++) {
-        if (!debugLog) {
+        if (debugLog) {
             process.stdout.write(`\rGeneriere & prüfe Form ${i}/${count}...`);
         }
+
         const form = generateForm(gridSize, pointDensity, { ...generationOptions, id: i });
 
         if (form.lines.length === 0) {
@@ -544,13 +536,14 @@ async function generateMultipleForms(config = {}) {
             meetsCriteriaCount++;
             const m = form.metadata;
             const baseName = `SH_PD${m.pointDensity}_L${m.lineCount}_F${m.faceCount}_T${m.volumeCount}_${meetsCriteriaCount}`;
-            
+            const fileData = { json: '', obj: '', png: '' };
+
             if (saveJson) {
                 const jsonFileName = `${baseName}.json`;
                 const jsonFilePath = path.join(absoluteOutputDir, jsonFileName);
                 try {
                     fs.writeFileSync(jsonFilePath, exportAsJson(form), 'utf8');
-                    savedFiles.push({json: jsonFileName, obj: ''});
+                    fileData.json = jsonFileName;
                 } catch (error) { console.error(`\nFehler beim Speichern von ${jsonFileName}: ${error.message}`); }
             }
 
@@ -559,15 +552,24 @@ async function generateMultipleForms(config = {}) {
                 const objFilePath = path.join(absoluteOutputDir, objFileName);
                 try {
                     fs.writeFileSync(objFilePath, exportAsObj(form), 'utf8');
-                    if(savedFiles.length > 0) savedFiles[savedFiles.length-1].obj = objFileName;
+                    fileData.obj = objFileName;
 
-                    if (generateThumbnails) {
-                        const thumbPath = path.join(absoluteOutputDir, 'thumbnails', `${baseName}.webp`);
-                        await _generateThumbnail(form, thumbPath);
+                    if (generateThumbnails && form.points.length > 0) {
+                        const thumbName = `${baseName}.png`;
+                        const thumbPath = path.join(thumbnailsDir, thumbName);
+                        try {
+                            const success = await _generateThumbnailCanvas(form, thumbPath);
+                            if (success) {
+                                fileData.png = thumbName;
+                            }
+                        } catch (thumbError) {
+                            console.warn(`\n⚠️ Thumbnail-Fehler für ${baseName}: ${thumbError.message}`);
+                        }
                     }
-                } catch (error) { console.error(`\nFehler beim Speichern von ${objFileName} oder Thumbnail: ${error.message}`); }
+                } catch (error) { console.error(`\nFehler beim Speichern von ${objFileName}: ${error.message}`); }
             }
-        } 
+            savedFiles.push(fileData);
+        }
     }
 
     process.stdout.write('\n\n--- Batch-Generierung Abgeschlossen ---\n');
@@ -579,369 +581,147 @@ async function generateMultipleForms(config = {}) {
         console.log(`\nTrefferquote (Kriterium erfüllt): ${meetsCriteriaCount} von ${generatedWithLines} (≈ ${faceHitRate}%).`);
     }
 
-    if (generateHtmlGallery) {
-        _createHtmlPreview(absoluteOutputDir, savedFiles.map(f => f.obj));
-    }
-
-    if (meetsCriteriaCount > 0 && generateHtmlGallery) {
-        const galleryPath = path.join(absoluteOutputDir, 'index.html');
-        try {
-            console.log('\nÖffne HTML-Galerie im Browser...');
-            await open(galleryPath);
-        } catch (error) {
-            console.warn(`\nKonnte die Galerie nicht automatisch öffnen. Bitte öffne sie manuell: ${galleryPath}`);
-        }
-    }
+    createObjIndexFile(absoluteOutputDir, savedFiles);
 }
 
-async function _generateThumbnail(form, thumbPath, width = 400, height = 300) {
-    const createCanvas = Canvas.createCanvas;
-    const headlessGL = gl;
-
-    const glContext = headlessGL(width, height, { preserveDrawingBuffer: true });
-
-    const renderer = new THREE.WebGLRenderer({
-    context: glContext,
-    antialias: true,
-    preserveDrawingBuffer: true,
-    });
-    renderer.setSize(width, height);
-    renderer.setClearColor(0xffffff, 1); // Weißer Hintergrund
-
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-    camera.position.set(3, 3, 3);
-    camera.lookAt(new THREE.Vector3(0, 0, 0));
-
-    const scene = new THREE.Scene();
-
-    const lineMaterial = new THREE.LineBasicMaterial({
-        color: 0x000000,
-        linewidth: 1,
-        transparent: true,
-        opacity: 0.6
-    });
-
-    const geometry = new THREE.BufferGeometry();
-    const positions = [];
-
-    form.lines.forEach(line => {
-        positions.push(line.start.x, line.start.y, line.start.z);
-        positions.push(line.end.x, line.end.y, line.end.z);
-    });
-
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    const lineSegments = new THREE.LineSegments(geometry, lineMaterial);
-
-    const group = new THREE.Group();
-    group.add(lineSegments);
-
-    const box = new THREE.Box3().setFromObject(group);
-    const center = box.getCenter(new THREE.Vector3());
-    group.position.sub(center);
-
-    const size = box.getSize(new THREE.Vector3());
-    const maxDim = Math.max(size.x, size.y, size.z);
-    if (maxDim > 0) {
-        const scale = 3 / maxDim;
-        group.scale.set(scale, scale, scale);
-    }
-
-    scene.add(group);
-    renderer.render(scene, camera);
-
+async function _generateThumbnailCanvas(form, thumbPath, width = 400, height = 300) {
+  try {
     const canvas = createCanvas(width, height);
-    const buffer = canvas.toBuffer('image/webp');
+    const ctx = canvas.getContext('2d');
+
+    // Hintergrund
+    ctx.fillStyle = '#1e1e1e';
+    ctx.fillRect(0, 0, width, height);
+
+    // simple isometric-like view: rotate points by Rx, Ry, Rz (in radians)
+    const deg2rad = (d) => d * Math.PI / 180;
+    const Rx = deg2rad(-30);
+    const Ry = deg2rad(45);
+    const cosX = Math.cos(Rx), sinX = Math.sin(Rx);
+    const cosY = Math.cos(Ry), sinY = Math.sin(Ry);
+
+    function project(p) {
+      // rotate around X
+      let x = p.x, y = p.y, z = p.z;
+      let y1 = y * cosX - z * sinX;
+      let z1 = y * sinX + z * cosX;
+      // rotate around Y
+      let x2 = x * cosY + z1 * sinY;
+      let z2 = -x * sinY + z1 * cosY;
+      // orthographic projection: (x2, y1)
+      return { x: x2, y: y1, z: z2 };
+    }
+
+    // Project all points once, build bounding box
+    const projected = form.points.map(p => project(p));
+    const xs = projected.map(p => p.x);
+    const ys = projected.map(p => p.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+
+    // compute scale and offset to fit into canvas with padding
+    const padding = 20;
+    const scaleX = (width - 2*padding) / (maxX - minX || 1);
+    const scaleY = (height - 2*padding) / (maxY - minY || 1);
+    const scale = Math.min(scaleX, scaleY);
+    const offsetX = padding + (width - 2*padding - (maxX - minX) * scale) / 2;
+    const offsetY = padding + (height - 2*padding - (maxY - minY) * scale) / 2;
+
+    function toCanvas(p) {
+      return {
+        x: offsetX + (p.x - minX) * scale,
+        y: height - (offsetY + (p.y - minY) * scale) // flip y for canvas coords
+      };
+    }
+
+    // Draw faces if available
+    if (form.metadata && Array.isArray(form.metadata.closedLoops)) {
+      ctx.save();
+      ctx.globalAlpha = 0.85;
+      for (const facePoints of form.metadata.closedLoops) {
+        if (!Array.isArray(facePoints) || facePoints.length < 3) continue;
+        ctx.beginPath();
+        const proj = facePoints.map(p => toCanvas(project(p)));
+        ctx.moveTo(proj[0].x, proj[0].y);
+        for (let i = 1; i < proj.length; i++) ctx.lineTo(proj[i].x, proj[i].y);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(0,120,255,0.18)'; // subtle blue
+        ctx.fill();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // Draw lines (edges)
+    ctx.save();
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+    ctx.beginPath();
+    for (const l of form.lines) {
+      const a = toCanvas(project(l.start));
+      const b = toCanvas(project(l.end));
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // Draw points
+    ctx.save();
+    ctx.fillStyle = '#ffffff';
+    for (const p of projected) {
+      const c = toCanvas(p);
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, Math.max(1, Math.min(3, 3)), 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // write file (png)
+    const buffer = canvas.toBuffer('image/png');
     fs.writeFileSync(thumbPath, buffer);
-    renderer.dispose();
+    return true;
+  } catch (err) {
+    console.warn('Thumbnail error:', err && err.message ? err.message : err);
+    return false;
+  }
 }
 
-function _createHtmlPreview(outputDir, objFiles) {
-    if (!fs || !path) return;
 
-    const htmlContent = `
-<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SpaceHarmony - Form-Galerie</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; background-color: #121212; color: #e0e0e0; }
-        header { text-align: center; padding: 2rem; border-bottom: 1px solid #333; }
-        h1 { margin: 0; font-size: 2rem; font-weight: 300; letter-spacing: 1px; }
-        main { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 2rem; padding: 2rem; }
-        .scene-wrapper {
-            position: relative;
-            background-color: #1e1e1e; 
-            border: 1px solid #333; 
-            border-radius: 8px; 
-            overflow: hidden; 
-            box-shadow: 0 4px 8px rgba(0,0,0,0.2); 
-            transition: transform 0.2s ease;
-            min-height: 320px; 
-            display: flex;
-            flex-direction: column;
-        }
-        .scene-wrapper:hover { transform: translateY(-5px); box-shadow: 0 8px 16px rgba(0,0,0,0.3); }
-        h2 { font-size: 0.9rem; font-weight: 400; text-align: center; padding: 0.8rem; margin: 0; background-color: #282828; border-bottom: 1px solid #333; word-wrap: break-word; }
-        .visual-container {
-            position: relative;
-            flex-grow: 1;
-        }
-        .preview-thumb {
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
-            width: 100%; height: 100%;
-            object-fit: cover;
-            transition: opacity 0.5s ease-in-out;
-            opacity: 1;
-            z-index: 2;
-        }
-        .three-canvas {
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
-            width: 100%; height: 100%;
-            opacity: 0;
-            transition: opacity 0.5s ease-in-out;
-            z-index: 1;
-        }
-        .loading-spinner {
-            width: 40px; height: 40px;
-            border: 4px solid #444;
-            border-top-color: #fff;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            position: absolute;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 3;
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-        @keyframes spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
-        .empty-state { text-align: center; grid-column: 1 / -1; padding: 4rem; }
-    </style>
-    <script type="importmap">
-    {
-        "imports": {
-            "three": "https://unpkg.com/three@0.164.1/build/three.module.js",
-            "three/addons/": "https://unpkg.com/three@0.164.1/examples/jsm/"
-        }
-    }
-    </script>
-</head>
-<body>
-    <header><h1>SpaceHarmony Form-Galerie</h1></header>
-    <main id="gallery-container"></main>
 
-    <script type="module">
-        import * as THREE from 'three';
-        import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+/**
+ * Schreibt eine obj_index.json, die alle generierten Dateipfade (OBJ, JSON, PNG) enthält.
+ */
+function createObjIndexFile(directoryPath, savedFiles) {
+    // Stelle sicher, dass nur Einträge mit einer OBJ-Datei aufgenommen werden.
+    const validFiles = savedFiles.filter(f => f.obj);
 
-        const objFiles = ${JSON.stringify(objFiles)};
-        const container = document.getElementById('gallery-container');
+    const fileIndex = validFiles.map(fileData => ({
+      obj: fileData.obj,
+      json: fileData.json || null,
+      thumbnail: fileData.png ? `thumbnails/${fileData.png}` : null
+    }));
 
-        const activeScenes = new Map();
+    const outputPath = path.join(directoryPath, 'obj_index.json');
+    fs.writeFileSync(outputPath, JSON.stringify(fileIndex, null, 2), 'utf8');
 
-        if (objFiles.length === 0) {
-            container.innerHTML = '<div class="empty-state"><p>Keine Formen zum Anzeigen gefunden. Führe den Generator aus, um neue Formen zu erstellen.</p></div>';
-        }
-
-        const observerCallback = (entries, observer) => {
-            entries.forEach(entry => {
-                const wrapper = entry.target;
-                const visualContainer = wrapper.querySelector('.visual-container');
-                if (!visualContainer) return;
-
-                if (entry.isIntersecting) {
-                    if (!activeScenes.has(wrapper)) {
-                        const spinner = visualContainer.querySelector('.loading-spinner');
-                        spinner.style.opacity = '1';
-
-                        const canvas = document.createElement('canvas');
-                        canvas.className = 'three-canvas';
-                        visualContainer.appendChild(canvas);
-                        
-                        const onLoaded = () => {
-                            const thumb = visualContainer.querySelector('.preview-thumb');
-                            if (thumb) thumb.style.opacity = '0';
-                            canvas.style.opacity = '1';
-                            spinner.style.opacity = '0';
-                        };
-
-                        const sceneContext = initScene(canvas, wrapper.dataset.objPath, onLoaded);
-                        activeScenes.set(wrapper, sceneContext);
-                    }
-                } else {
-                    if (activeScenes.has(wrapper)) {
-                        const thumb = visualContainer.querySelector('.preview-thumb');
-                        if (thumb) thumb.style.opacity = '1';
-
-                        destroyScene(activeScenes.get(wrapper));
-                        activeScenes.delete(wrapper);
-                        visualContainer.querySelector('canvas')?.remove();
-                    }
-                }
-            });
-        };
-
-        const observer = new IntersectionObserver(observerCallback, { rootMargin: '200px' });
-
-        objFiles.forEach(fileName => {
-            if (!fileName) return;
-            const thumbName = fileName.replace('.obj', '.webp');
-            const sceneWrapper = document.createElement('div');
-            sceneWrapper.className = 'scene-wrapper';
-            sceneWrapper.dataset.objPath = fileName;
-
-            const title = document.createElement('h2');
-            title.textContent = fileName;
-            sceneWrapper.appendChild(title);
-
-            const visualContainer = document.createElement('div');
-            visualContainer.className = 'visual-container';
-
-            const spinner = document.createElement('div');
-            spinner.className = 'loading-spinner';
-
-            const img = document.createElement('img');
-            img.src = 'thumbnails/' + thumbName;
-            img.className = 'preview-thumb';
-            img.alt = 'Vorschau von ' + fileName;
-
-            visualContainer.appendChild(spinner);
-            visualContainer.appendChild(img);
-
-            sceneWrapper.appendChild(visualContainer);
-            container.appendChild(sceneWrapper);
-            observer.observe(sceneWrapper);
-        });
-
-        function initScene(canvas, objPath, onLoadedCallback) {
-            const scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x1e1e1e);
-
-            const renderer = new THREE.WebGLRenderer({
-                context,
-                antialias: true,
-                preserveDrawingBuffer: true
-            });
-            renderer.setSize(width, height, false);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Performance-Optimierung für Mobile
-
-            const parent = canvas.parentElement;
-            const aspect = parent.clientWidth / parent.clientHeight;
-            const frustumSize = 5;
-            const camera = new THREE.OrthographicCamera(frustumSize * aspect / -2, frustumSize * aspect / 2, frustumSize / 2, frustumSize / -2, 0.1, 1000);
-            camera.position.set(5, 5, 5);
-            camera.lookAt(scene.position);
-
-            const controls = new OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true;
-
-            scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-            const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
-            dirLight.position.set(8, 10, 5);
-            scene.add(dirLight);
-
-            const loader = new OBJLoader();
-            loader.load(objPath, 
-                (object) => {
-                    const box = new THREE.Box3().setFromObject(object);
-                    const center = box.getCenter(new THREE.Vector3());
-                    object.position.sub(center);
-
-                    const size = box.getSize(new THREE.Vector3());
-                    const maxDim = Math.max(size.x, size.y, size.z);
-                    const scale = frustumSize / maxDim;
-                    object.scale.set(scale, scale, scale);
-
-                    object.traverse(child => {
-                        if (child.isMesh) {
-                            child.material = new THREE.MeshPhysicalMaterial({
-                                color: 0x0077ff, metalness: 0.2, roughness: 0.6,
-                                transparent: true, opacity: 0.8, side: THREE.DoubleSide
-                            });
-                            const wireframe = new THREE.LineSegments(
-                                new THREE.WireframeGeometry(child.geometry),
-                                new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 1, transparent: true, opacity: 0.5 })
-                            );
-                            child.add(wireframe);
-                        }
-                    });
-                    scene.add(object);
-                    if(onLoadedCallback) onLoadedCallback(); // Callback nach dem Laden ausführen
-                },
-                undefined, 
-                (error) => console.error('Fehler beim Laden von', objPath, error)
-            );
-
-            let animationId;
-            function animate() {
-                animationId = requestAnimationFrame(animate);
-                controls.update();
-                renderer.render(scene, camera);
-            }
-            animate();
-
-            const resizeListener = () => {
-                const p = canvas.parentElement;
-                if (!p) return;
-                renderer.setSize(p.clientWidth, p.clientHeight);
-                const aspect = p.clientWidth / p.clientHeight;
-                camera.left = frustumSize * aspect / -2;
-                camera.right = frustumSize * aspect / 2;
-                camera.updateProjectionMatrix();
-            };
-            window.addEventListener('resize', resizeListener);
-
-            return { scene, renderer, controls, animationId, resizeListener };
-        }
-
-        function destroyScene(context) {
-            cancelAnimationFrame(context.animationId);
-            window.removeEventListener('resize', context.resizeListener);
-
-            context.scene.traverse(object => {
-                if (object.geometry) object.geometry.dispose();
-                if (object.material) {
-                    if (Array.isArray(object.material)) {
-                        object.material.forEach(material => material.dispose());
-                    } else {
-                        object.material.dispose();
-                    }
-                }
-            });
-
-            context.controls.dispose();
-            context.renderer.dispose();
-            context.renderer.forceContextLoss();
-        }
-    </script>
-</body>
-</html>
-    `;
-
-    const indexPath = path.join(outputDir, 'index.html');
-    try {
-        fs.writeFileSync(indexPath, htmlContent, 'utf8');
-        console.log(`Interaktive HTML-Galerie erfolgreich erstellt: ${indexPath}`);
-    } catch (error) {
-        console.error(`Fehler beim Erstellen der HTML-Galerie: ${error.message}`);
-    }
+    console.log(`✅ obj_index.json erstellt mit ${fileIndex.length} Einträgen.`);
 }
 
 // --- Skript ausführen (wenn direkt mit Node.js aufgerufen) ---
 const isMainModule = (import.meta.url.startsWith('file://') && process.argv[1] === fileURLToPath(import.meta.url));
 
 if (isMainModule) {
+    const outputDir = path.join(__dirname, 'generated_forms');
+
     generateMultipleForms({
         count: 5,
         minFaces: 1,
         debugLog: true,
-        saveJson: false,
-        saveObj: true, // ← wieder aktivieren
+        saveJson: true,
+        saveObj: true,
         generateHtmlGallery: true,
         generateThumbnails: true,
         gridSize: 3,
@@ -951,5 +731,5 @@ if (isMainModule) {
             minSteps: 8,
             maxSteps: 18
         }
-    });
+    })
 }

@@ -5,15 +5,19 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start:gallery": "serve js/generated_forms",
+    "start:server": "node server.js"
   },
   "keywords": [],
   "author": "Philipp Paulsen",
   "license": "MIT",
   "dependencies": {
     "canvas": "^3.2.0",
-    "gl": "^8.1.6",
-    "open": "^10.2.0",
-    "three": "^0.180.0"
+    "express": "^4.19.2",
+    "open": "^10.2.0"
+  },
+  "devDependencies": {
+    "serve": "^14.2.3"
   }
 }

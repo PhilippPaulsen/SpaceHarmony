@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SpaceHarmony - Form-Galerie</title>
+    <style>
+        :root {
+            --background-color: #121212;
+            --card-color: #1e1e1e;
+            --text-color: #e0e0e0;
+            --border-color: #333;
+            --accent-color: #0077ff;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            background-color: var(--background-color);
+            color: var(--text-color);
+        }
+        header {
+            text-align: center;
+            padding: 2rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+        h1 {
+            margin: 0;
+            font-size: 2.5rem;
+            font-weight: 300;
+            letter-spacing: 1px;
+        }
+        main {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1.5rem;
+            padding: 2rem;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        .gallery-item {
+            display: block;
+            text-decoration: none;
+            color: var(--text-color);
+            background-color: var(--card-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .gallery-item:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.4);
+            border-color: var(--accent-color);
+        }
+        .gallery-item img {
+            display: block;
+            width: 100%;
+            height: 250px;
+            object-fit: cover;
+            background-color: #2a2a2a;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .gallery-item h2 {
+            font-size: 0.9rem;
+            font-weight: 500;
+            text-align: center;
+            padding: 1rem;
+            margin: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .empty-state {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 5rem 2rem;
+            background-color: var(--card-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Form-Galerie</h1>
+    </header>
+    <main id="gallery-container">
+        <!-- Thumbnails werden hier per JavaScript geladen -->
+    </main>
+
+    <script type="module">
+        const galleryContainer = document.getElementById('gallery-container');
+
+        async function loadGallery() {
+            try {
+                // Lade den Index aus dem /data Unterverzeichnis (mit Cache-Busting)
+                const response = await fetch(`/gallery/data/obj_index.json?v=${Date.now()}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP-Fehler: ${response.status}`);
+                }
+                const files = await response.json();
+
+                if (!files || files.length === 0) {
+                    galleryContainer.innerHTML = `
+                        <div class="empty-state">
+                            <h2>Keine Formen gefunden.</h2>
+                            <p>Gehe zur <a href="/">Generator-Seite</a>, um neue Formen zu erstellen.</p>
+                        </div>`;
+                    return;
+                }
+
+                galleryContainer.innerHTML = '';
+
+                files.forEach(fileInfo => {
+                    if (!fileInfo.obj || !fileInfo.thumbnail) return;
+
+                    const link = document.createElement('a');
+                    link.className = 'gallery-item';
+                    link.href = 'viewer.html'; // Navigation via localStorage
+
+                    link.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        localStorage.setItem('selectedForm', fileInfo.obj);
+                        window.location.href = 'viewer.html';
+                    });
+
+                    const thumbnail = document.createElement('img');
+                    // Pfad zum Thumbnail im /data Unterverzeichnis
+                    thumbnail.src = `/gallery/data/${fileInfo.thumbnail}`;
+                    thumbnail.alt = `Vorschau von ${fileInfo.obj}`;
+                    thumbnail.onerror = () => { thumbnail.style.display = 'none'; };
+
+                    const title = document.createElement('h2');
+                    title.textContent = fileInfo.obj;
+
+                    link.appendChild(thumbnail);
+                    link.appendChild(title);
+                    galleryContainer.appendChild(link);
+                });
+
+            } catch (error) {
+                console.error('Fehler beim Laden der Galerie:', error);
+                galleryContainer.innerHTML = `
+                    <div class="empty-state">
+                        <h2>Fehler beim Laden der Galerie.</h2>
+                        <p>Stelle sicher, dass die Datei <code>obj_index.json</code> existiert. Gehe zur <a href="/">Generator-Seite</a> und erstelle neue Formen.</p>
+                    </div>`;
+            }
+        }
+
+        loadGallery();
+    </script>
+</body>
+</html>
