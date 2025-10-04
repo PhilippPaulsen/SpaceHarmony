@@ -71,7 +71,7 @@ function _generateMetaData(form, options, validationResults) {
         "name": `SH_Form_${id}`,
         "generatedAt": new Date().toISOString(),
         "gridSize": options.gridSize,
-        "pointDensity": options.pointDensity,
+        "pointDensity": options.pointDensity - 1,
         "minSteps": options.minSteps || null,
         "maxSteps": options.maxSteps || null,
         "pointCount": form.points.length,

@@ -23,14 +23,15 @@ app.use('/gallery/data', (req, res, next) => {
 app.post('/generate', async (req, res) => {
   console.log('Anfrage zum Generieren von Formen erhalten mit Optionen:', req.body);
 
-  const { count, minFaces, gridSize, pointDensity, mode, minSteps, maxSteps } = req.body;
+  const { count, minFaces, gridSize, mode, minSteps, maxSteps } = req.body;
+  const densityForGenerator = Number(req.body.pointDensity) + 1;
 
   try {
     await generateMultipleForms({
       count: Number(count),
       minFaces: Number(minFaces),
       gridSize: Number(gridSize),
-      pointDensity: Number(pointDensity),
+      pointDensity: densityForGenerator,
       debugLog: true,
       saveJson: true,
       saveObj: true,
@@ -51,41 +52,45 @@ app.post('/generate', async (req, res) => {
 });
 
 app.delete('/delete', (req, res) => {
+    console.log('Löschanfrage erhalten. Body:', JSON.stringify(req.body, null, 2));
     const { filename } = req.body;
     if (!filename) {
         return res.status(400).send('Dateiname fehlt.');
     }
 
-    console.log(`Löschanfrage für ${filename} erhalten.`);
+    const filenames = (Array.isArray(filename) ? filename : [filename]).flat();
+    console.log(`Löschanfrage für ${filenames.length} Datei(en) wird verarbeitet:`, filenames);
 
     const baseDir = path.join(__dirname, 'js', 'generated_forms');
-    const objPath = path.join(baseDir, filename);
-    const jsonPath = path.join(baseDir, filename.replace('.obj', '.json'));
-    const thumbPath = path.join(baseDir, 'thumbnails', filename.replace('.obj', '.png'));
     const indexPath = path.join(baseDir, 'obj_index.json');
+    let allFilesToDelete = [];
 
-    const filesToDelete = [objPath, jsonPath, thumbPath];
-    Promise.all(filesToDelete.map(file => fs.promises.unlink(file).catch(e => console.warn(`Datei nicht gefunden/gelöscht: ${file}`))))
+    filenames.forEach(name => {
+        if (typeof name !== 'string') {
+            console.error('Ungültiger Dateiname in der Anfrage gefunden:', name);
+            return; // Überspringe ungültige Einträge
+        }
+        allFilesToDelete.push(path.join(baseDir, name));
+        allFilesToDelete.push(path.join(baseDir, name.replace('.obj', '.json')));
+        allFilesToDelete.push(path.join(baseDir, 'thumbnails', name.replace('.obj', '.png')));
+    });
+
+    Promise.all(allFilesToDelete.map(file => fs.promises.unlink(file).catch(e => console.warn(`Datei nicht gefunden/gelöscht: ${file}`))))
         .then(() => {
-            // Index aktualisieren
-            fs.promises.readFile(indexPath, 'utf8')
+            return fs.promises.readFile(indexPath, 'utf8')
                 .then(data => {
                     let index = JSON.parse(data);
-                    const newIndex = index.filter(item => item.obj !== filename);
+                    const newIndex = index.filter(item => !filenames.includes(item.obj));
                     return fs.promises.writeFile(indexPath, JSON.stringify(newIndex, null, 2), 'utf8');
-                })
-                .then(() => {
-                    console.log(`Form ${filename} erfolgreich gelöscht.`);
-                    res.status(200).send(`Form ${filename} erfolgreich gelöscht.`);
-                })
-                .catch(err => {
-                    console.error('Fehler beim Aktualisieren der Index-Datei:', err);
-                    res.status(500).send('Fehler beim Aktualisieren der Index-Datei.');
                 });
         })
+        .then(() => {
+            console.log(`${filenames.length} Formen erfolgreich gelöscht.`);
+            res.status(200).send(`${filenames.length} Formen erfolgreich gelöscht.`);
+        })
         .catch(err => {
-            console.error('Fehler beim Löschen der Dateien:', err);
-            res.status(500).send('Fehler beim Löschen der Dateien.');
+            console.error('Fehler beim Löschvorgang:', err);
+            res.status(500).send('Fehler beim Löschen der Dateien oder Aktualisieren des Index.');
         });
 });
 

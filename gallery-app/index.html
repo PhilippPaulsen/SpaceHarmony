@@ -20,15 +20,41 @@
             color: var(--text-color);
         }
         header {
+            display: flex;
+            justify-content: center;
+            align-items: center;
             text-align: center;
-            padding: 2rem;
+            padding: 1rem 2rem;
             border-bottom: 1px solid var(--border-color);
+            position: relative;
         }
         h1 {
             margin: 0;
             font-size: 2.5rem;
             font-weight: 300;
             letter-spacing: 1px;
+        }
+        .header-actions {
+            position: absolute;
+            right: 2rem;
+            display: flex;
+            gap: 0.5rem;
+        }
+        .header-actions button {
+            font-size: 0.9rem;
+            background: var(--card-color);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .header-actions button:hover {
+            border-color: var(--accent-color);
+        }
+        #delete-selected-btn {
+            background: var(--delete-color);
+            border-color: var(--delete-color);
         }
         main {
             display: grid;
@@ -40,7 +66,8 @@
         }
         .gallery-item {
             position: relative; /* Wichtig für den Löschen-Button */
-            display: block;
+            display: flex; /* Flexbox für bessere Ausrichtung */
+            flex-direction: column;
             text-decoration: none;
             color: var(--text-color);
             background-color: var(--card-color);
@@ -50,15 +77,15 @@
             box-shadow: 0 4px 8px rgba(0,0,0,0.2);
             transition: transform 0.2s ease, box-shadow 0.2s ease;
         }
-        .gallery-item:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 8px 16px rgba(0,0,0,0.4);
-            border-color: var(--accent-color);
+        .gallery-item.selected {
+            box-shadow: 0 0 0 3px var(--accent-color) inset;
+            transform: scale(0.98);
         }
-        .gallery-item a {
+        .gallery-item a.viewer-link {
             display: block;
             text-decoration: none;
             color: inherit;
+            flex-grow: 1;
         }
         .gallery-item img {
             display: block;
@@ -66,7 +93,6 @@
             height: 250px;
             object-fit: cover;
             background-color: #2a2a2a;
-            border-bottom: 1px solid var(--border-color);
         }
         .gallery-item h2 {
             font-size: 0.9rem;
@@ -78,31 +104,24 @@
             overflow: hidden;
             text-overflow: ellipsis;
         }
-        .delete-btn {
-            position: absolute;
-            top: 0.5rem;
-            right: 0.5rem;
-            background: var(--delete-color);
-            color: white;
-            border: none;
-            border-radius: 50%;
-            width: 28px;
-            height: 28px;
-            cursor: pointer;
-            font-size: 1.2rem;
-            font-weight: bold;
-            line-height: 28px;
-            text-align: center;
-            opacity: 0;
-            transition: opacity 0.2s ease, transform 0.2s ease;
-            transform: scale(0.8);
+        .download-container {
+            padding: 0.5rem 1rem 1rem 1rem;
+            display: flex;
+            gap: 0.5rem;
+            justify-content: center;
+            border-top: 1px solid var(--border-color);
         }
-        .gallery-item:hover .delete-btn {
-            opacity: 1;
-            transform: scale(1);
+        .download-btn {
+            background: #444;
+            color: #eee;
+            padding: 0.3rem 0.8rem;
+            border-radius: 4px;
+            text-decoration: none;
+            font-size: 0.8rem;
+            transition: background-color 0.2s;
         }
-        .delete-btn:hover {
-            background: rgba(255, 20, 20, 1);
+        .download-btn:hover {
+            background: var(--accent-color);
         }
         .empty-state {
             grid-column: 1 / -1;
@@ -117,6 +136,11 @@
 <body>
     <header>
         <h1>Form-Galerie</h1>
+        <div class="header-actions">
+            <button id="select-mode-btn">Auswählen</button>
+            <button id="delete-selected-btn" style="display: none;">Auswahl löschen</button>
+            <button id="cancel-select-btn" style="display: none;">Abbrechen</button>
+        </div>
     </header>
     <main id="gallery-container">
         <!-- Thumbnails werden hier per JavaScript geladen -->
@@ -124,6 +148,63 @@
 
     <script type="module">
         const galleryContainer = document.getElementById('gallery-container');
+        const selectModeBtn = document.getElementById('select-mode-btn');
+        const deleteSelectedBtn = document.getElementById('delete-selected-btn');
+        const cancelSelectBtn = document.getElementById('cancel-select-btn');
+
+        let isSelectMode = false;
+        let selectedItems = new Set();
+
+        function toggleSelectMode(forceOff = false) {
+            isSelectMode = forceOff ? false : !isSelectMode;
+            
+            selectModeBtn.style.display = isSelectMode ? 'none' : 'inline-block';
+            deleteSelectedBtn.style.display = isSelectMode ? 'inline-block' : 'none';
+            cancelSelectBtn.style.display = isSelectMode ? 'inline-block' : 'none';
+            galleryContainer.classList.toggle('select-mode', isSelectMode);
+
+            if (!isSelectMode) {
+                selectedItems.clear();
+                document.querySelectorAll('.gallery-item.selected').forEach(item => item.classList.remove('selected'));
+            }
+        }
+
+        selectModeBtn.addEventListener('click', () => toggleSelectMode());
+        cancelSelectBtn.addEventListener('click', () => toggleSelectMode(true));
+
+        deleteSelectedBtn.addEventListener('click', async () => {
+            if (selectedItems.size === 0) {
+                alert('Keine Formen ausgewählt.');
+                return;
+            }
+
+            if (!confirm(`${selectedItems.size} Formen wirklich löschen?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/delete', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename: Array.from(selectedItems) })
+                });
+
+                if (response.ok) {
+                    document.querySelectorAll('.gallery-item.selected').forEach(item => {
+                        item.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
+                        item.style.transform = 'scale(0.9)';
+                        item.style.opacity = '0';
+                        setTimeout(() => item.remove(), 300);
+                    });
+                    toggleSelectMode(true); // Exit select mode after deletion
+                } else {
+                    const errorText = await response.text();
+                    alert(`Fehler beim Löschen: ${errorText}`);
+                }
+            } catch (error) {
+                alert(`Netzwerkfehler: ${error.message}`);
+            }
+        });
 
         async function loadGallery() {
             try {
@@ -139,6 +220,7 @@
                             <h2>Keine Formen gefunden.</h2>
                             <p>Gehe zur <a href="../generator.html">Generator-Seite</a>, um neue Formen zu erstellen.</p>
                         </div>`;
+                    selectModeBtn.style.display = 'none'; // Hide select button if no items
                     return;
                 }
 
@@ -149,13 +231,23 @@
 
                     const item = document.createElement('div');
                     item.className = 'gallery-item';
+                    item.dataset.filename = fileInfo.obj;
 
                     const link = document.createElement('a');
-                    link.href = 'viewer.html';
+                    link.className = 'viewer-link';
+                    link.href = `viewer.html?file=${fileInfo.obj}`;
                     link.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        localStorage.setItem('selectedForm', fileInfo.obj);
-                        window.location.href = `viewer.html?file=${fileInfo.obj}`;
+                        if (isSelectMode) {
+                            e.preventDefault();
+                            item.classList.toggle('selected');
+                            if (selectedItems.has(fileInfo.obj)) {
+                                selectedItems.delete(fileInfo.obj);
+                            } else {
+                                selectedItems.add(fileInfo.obj);
+                            }
+                        } else {
+                            localStorage.setItem('selectedForm', fileInfo.obj);
+                        }
                     });
 
                     const thumbnail = document.createElement('img');
@@ -169,41 +261,29 @@
                     link.appendChild(thumbnail);
                     link.appendChild(title);
 
-                    const deleteBtn = document.createElement('button');
-                    deleteBtn.className = 'delete-btn';
-                    deleteBtn.innerHTML = '&times;';
-                    deleteBtn.title = 'Form löschen';
-                    deleteBtn.addEventListener('click', async (e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
+                    const downloadContainer = document.createElement('div');
+                    downloadContainer.className = 'download-container';
 
-                        if (!confirm(`Soll die Form "${fileInfo.obj}" wirklich gelöscht werden?`)) {
-                            return;
-                        }
+                    const downloadObj = document.createElement('a');
+                    downloadObj.href = `../js/generated_forms/${fileInfo.obj}`;
+                    downloadObj.download = fileInfo.obj;
+                    downloadObj.textContent = 'OBJ';
+                    downloadObj.className = 'download-btn';
+                    downloadObj.addEventListener('click', (e) => e.stopPropagation());
 
-                        try {
-                            const response = await fetch('/delete', {
-                                method: 'DELETE',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ filename: fileInfo.obj })
-                            });
+                    const downloadJson = document.createElement('a');
+                    const jsonFilename = fileInfo.json || fileInfo.obj.replace('.obj', '.json');
+                    downloadJson.href = `../js/generated_forms/${jsonFilename}`;
+                    downloadJson.download = jsonFilename;
+                    downloadJson.textContent = 'JSON';
+                    downloadJson.className = 'download-btn';
+                    downloadJson.addEventListener('click', (e) => e.stopPropagation());
 
-                            if (response.ok) {
-                                item.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
-                                item.style.transform = 'scale(0.9)';
-                                item.style.opacity = '0';
-                                setTimeout(() => item.remove(), 300);
-                            } else {
-                                const errorText = await response.text();
-                                alert(`Fehler beim Löschen: ${errorText}`);
-                            }
-                        } catch (error) {
-                            alert(`Netzwerkfehler: ${error.message}`);
-                        }
-                    });
+                    downloadContainer.appendChild(downloadObj);
+                    downloadContainer.appendChild(downloadJson);
 
                     item.appendChild(link);
-                    item.appendChild(deleteBtn);
+                    item.appendChild(downloadContainer);
                     galleryContainer.appendChild(item);
                 });
 
@@ -212,7 +292,7 @@
                 galleryContainer.innerHTML = `
                     <div class="empty-state">
                         <h2>Fehler beim Laden der Galerie.</h2>
-                        <p>Stelle sicher, dass die Datei <code>obj_index.json</code> existiert. Gehe zur <a href="/">Generator-Seite</a> und erstelle neue Formen.</p>
+                        <p>Stelle sicher, dass die Datei <code>obj_index.json</code> existiert. Gehe zur <a href="../generator.html">Generator-Seite</a> und erstelle neue Formen.</p>
                     </div>`;
             }
         }

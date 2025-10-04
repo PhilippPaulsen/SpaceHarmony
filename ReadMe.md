@@ -32,7 +32,7 @@ brew install pkg-config cairo pango libpng jpeg giflib librsvg
 ## 🛠️ Aktueller Funktionsumfang
 
 - ✅ Orthografische 3D-Kamera mit OrbitControls & Auto-Rotate  
-- ✅ Rasterwürfel mit einstellbarer Teilung (gridSize)  
+- ✅ Rasterwürfel mit einstellbarer Teilung (`gridSize`)  
 - ✅ Punktplatzierung durch Mausklick auf Raster  
 - ✅ Linienverbindungen mit Undo/Redo-Unterstützung  
 - ✅ Symmetrieoperationen:
@@ -41,7 +41,7 @@ brew install pkg-config cairo pango libpng jpeg giflib librsvg
   - Translation in XYZ-Richtung  
   - Inversion am Ursprung  
   - Schraubsymmetrie (Rotation + Translation)  
-  - Rotospiegelung (Kombination aus Rotation & Spiegelung)  
+  - Rotospiegelung (Rotation & Spiegelung)  
 - ✅ Optionaler Kurvenmodus (quadratische Bézier-Linien)  
 - ✅ Umschaltbare gewölbte Flächen / Volumen auf Bézier-Basis  
 - ✅ Manuelle & automatische Erkennung geschlossener Flächen / Volumen  
@@ -49,8 +49,9 @@ brew install pkg-config cairo pango libpng jpeg giflib librsvg
 - ✅ Liniengenerator für Zufallsformen  
 - ✅ Presets: Würfelrahmen, Tetraeder, Diagonalkreuz, Stern  
 - ✅ Transparente Darstellung mit Shading + Hover-Effekte  
-- ✅ Light/Dark Mode  
+- ✅ Light/Dark Mode (Apple Glass-kompatibel)  
 - ✅ Export `.json`, `.obj`, `.stl` inkl. Metadatenstruktur  
+- ✅ Download-Buttons für `.obj` und `.json` in der Galerie  
 - ✅ Intelligentes Labeling nach **Ostwald/Hinterreiter-System**:
   - z. B. `V1_6A.obj` für erstes Volumen mit 6 Punkten  
   - Vertex-Labels auf Basis ihrer Lage im Raum (z. B. `X+_Y0_Z-`)  
@@ -65,6 +66,7 @@ brew install pkg-config cairo pango libpng jpeg giflib librsvg
 - 🧠 **Cycle-Detection zur Flächenerkennung**  
 - 💾 **Export `.json` + `.obj` mit eingebetteten Metadaten**  
 - 🌐 **HTML-Galerie mit Three.js-Vorschau (Lazy Loading)**  
+- 🖼️ **Thumbnails werden automatisch generiert (PNG)**  
 - 📊 **Batch-Statistiken (z. B. Trefferquote bei Flächenbildung)**  
 - ⚙️ **Konfiguration über Optionsobjekt** (`minFaces`, `maxSteps`, `singleStroke`, etc.)  
 - 🐞 **Debug-Modus mit detaillierter Formausgabe**  
@@ -112,7 +114,11 @@ Formen werden korrekt erkannt und gespeichert.
 
 - ⚡ **IntersectionObserver** statt fixer Three.js-Szenen  
 - 💤 Nur sichtbare Modelle werden geladen (weniger WebGL-Kontexte)  
-- 🌄 Optional: Vorschaubild als `<img>` einfügen (→ später möglich)
+- 🌄 Vorschau als `.webp` / `.png` wird automatisch generiert  
+- 📂 **"Löschen"-Button je Form, optional "Mehrfachauswahl löschen" geplant**  
+- 🔽 Metadaten-Panel ist standardmäßig eingeklappt  
+- ⚠️ Symmetrieoperationen teilweise instabil – Workaround durch höhere Punktdichte  
+- 🛠️ Benennung `pointDensity` nun synchronisiert mit Raumharmonik
 
 ---
 
@@ -122,35 +128,19 @@ Formen werden korrekt erkannt und gespeichert.
 - [ ] Automatische Volumenschließung nach Symmetrieoperationen  
 - [ ] Typisierung: Offen | Geschlossen | Regulär | Symmetrisch  
 - [ ] Rückwärtsformung durch Label-Eingabe  
-- [ ] Download-Buttons für OBJ und JSON-Dateien direkt im Viewer  
-- [ ] Button „Ähnliche Formen generieren“ aus Viewer → Generator mit Parametern  
+- [ ] Filterung & Sortierung in Galerie (nach Punkten/Linien/Flächen)  
+- [ ] Erkennung modular kombinierbarer Flächenformen  
 
 ### 🧭 Systematik & Klassifikation
 - [ ] Systematische Erzeugung aller Kombinationsformen  
 - [ ] Gruppierung nach Symmetrie & Struktur  
 - [ ] Export für Buch, Galerie, Forschung  
-- [ ] Duplikat-Erkennung in Galerie + Filter/Sortierung  
+- [ ] Modularer Volumenbau aus Teilformen  
 
 ### 🖥️ Interface & UX
-- [ ] Minimalistische UI mit Slider, Icons, Tooltips  
-- [ ] Kontextbasiertes Onboarding / Hilfesystem  
-- [ ] Touch-Optimierung für Tablet-Ansicht  
-- [ ] Light/Dark-Mode + Apple Glass Designschema  
-- [ ] Integration mit Meta Quest 3 / VR  
-
-### 🔗 Verknüpfung der Applikationen
-- [ ] „In Raumharmonik öffnen“ (aus Galerie)  
-- [ ] „Form in Generator laden / bearbeiten“  
-- [ ] KI-Vorschläge für ähnliche Formen
-
----
-
-## 💡 KI-gestützte Exploration (Ausblick)
-
-- [ ] Scoring nach Regelmäßigkeit & Ästhetik  
-- [ ] Vorschläge für ähnliche / komplementäre Formen  
-- [ ] KI-Klassifikation nach Symmetriegruppen  
-- [ ] Kuratorischer Modus für gezielte Auswahl
+- [ ] Minimalistische UI mit Slidern, Tooltips, Download-Funktionen  
+- [ ] Touch-Optimierung für Tablet & VR-Headsets (MetaQuest, Apple Glass)  
+- [ ] "Öffnen in Raumharmonik"-Verknüpfung aus Galerie  
 
 ---
 
