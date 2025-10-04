@@ -33,36 +33,55 @@ function generateForm(gridSize, pointDensity, options = {}) {
 
     if (genOptions.symmetryGroup || options.mode === 'fullSymmetry' || options.mode === 'All Reflections / Rotations') {
         pathResult = _generateSymmetricForm(gridPoints, { symmetryGroup: 'cubic' });
-    } 
-    else {
+    } else {
         pathResult = _generateLinePath(gridPoints, options);
     }
 
-    form.points = pathResult.points;
-    form.lines = pathResult.lines;
+    // --- SKALIERUNG AUF RAUMHARMONIK-KOORDINATENSYSTEM ---
+    const targetGridSize = 3; // Ziel-Koordinatensystem
+    const scaleFactor = targetGridSize / gridSize;
 
+    // Skaliere Punkte
+    const scaledPoints = pathResult.points.map(p => new Point(
+        p.x * scaleFactor,
+        p.y * scaleFactor,
+        p.z * scaleFactor
+    ));
+
+    form.points = scaledPoints;
+
+    // Hilfsfunktion für eindeutige Schlüssel
+    const pointKey = (p) => `${(p.x).toFixed(6)},${(p.y).toFixed(6)},${(p.z).toFixed(6)}`;
+
+    // Map für schnelle Suche
+    const pointIndexMap = new Map(form.points.map((p, i) => [pointKey(p), i]));
+
+    // Rekonstruiere Linien mit neuen Instanzen
+    form.lines = [];
+    if (pathResult.lines) {
+        for (const l of pathResult.lines) {
+            const startScaled = new Point(l.start.x * scaleFactor, l.start.y * scaleFactor, l.start.z * scaleFactor);
+            const endScaled = new Point(l.end.x * scaleFactor, l.end.y * scaleFactor, l.end.z * scaleFactor);
+
+            const startIdx = pointIndexMap.get(pointKey(startScaled));
+            const endIdx = pointIndexMap.get(pointKey(endScaled));
+            if (startIdx !== undefined && endIdx !== undefined && startIdx !== endIdx) {
+                // Im Form-Objekt weiter als Line-Objekte speichern:
+                form.lines.push(new Line(form.points[startIdx], form.points[endIdx]));
+            }
+        }
+    }
+
+    // Validierung & Metadaten
     const validationResults = _validateForm(form);
-    
     if (pathResult.symmetryInfo) {
         validationResults.symmetryProperties = pathResult.symmetryInfo.type;
         validationResults.symmetryScore = _calculateSymmetryScore(form, pathResult.symmetryInfo.operations);
         validationResults.symmetries = pathResult.symmetryInfo.operations;
         validationResults.seedShape = pathResult.symmetryInfo.seed;
     }
-
     form.metadata = _generateMetaData(form, { gridSize, pointDensity, ...options }, validationResults);
 
-    // --- SKALIERUNG AUF RAUMHARMONIK-KOORDINATENSYSTEM ---
-    const targetGridSize = 3; // Ziel-Koordinatensystem
-    const scaleFactor = targetGridSize / gridSize;
-    // Optional: Mittig auf Ursprung verschieben:
-    // const center = (gridSize - 1) / 2;
-
-    form.points = form.points.map(p => new Point(
-        (p.x /* - center */) * scaleFactor,
-        (p.y /* - center */) * scaleFactor,
-        (p.z /* - center */) * scaleFactor
-    ));
     form.metadata.coordinateSystem = "raumharmonik";
     form.metadata.scaledTo = "gridSize3";
 
@@ -233,32 +252,49 @@ function _defineGrid(gridSize, pointDensity) {
 }
 
 function _generateLinePath(gridPoints, options) {
+    // Diese Funktion erzeugt einen einzügigen Linienpfad (single stroke)
+    // aus den Gitterpunkten. Sie sorgt dafür, dass auch tatsächlich Linien entstehen.
     const usedPoints = new Set();
     const lines = [];
     const pathPoints = [];
 
+    // Ohne mindestens 2 Punkte keine Linien
     if (gridPoints.length < 2) return { points: [], lines: [] };
 
+    // Starte an einem zufälligen Punkt
     let currentPoint = gridPoints[Math.floor(Math.random() * gridPoints.length)];
     usedPoints.add(currentPoint);
     pathPoints.push(currentPoint);
 
+    // Anzahl der Schritte bestimmen
     const minSteps = options.minSteps || 3;
     const maxSteps = options.maxSteps || 20;
     const steps = minSteps + Math.floor(Math.random() * (maxSteps - minSteps + 1));
 
+    // Schleife: versuche, bei jedem Schritt einen gültigen nächsten Punkt zu finden
     for (let i = 0; i < steps; i++) {
+        // Kandidaten sind unbenutzte Punkte, die auf einer geraden oder diagonalen Linie liegen
         const candidates = gridPoints.filter(p => !usedPoints.has(p) && _isStraightLine(currentPoint, p));
-        if (candidates.length === 0) break;
 
+        if (candidates.length === 0) {
+            // keine gültigen Verbindungen mehr
+            break;
+        }
+
+        // nächsten Punkt zufällig aus Kandidaten wählen
         const nextPoint = candidates[Math.floor(Math.random() * candidates.length)];
+
+        // Linie hinzufügen
         lines.push(new Line(currentPoint, nextPoint));
+
+        // aktuellen Punkt updaten
         currentPoint = nextPoint;
         pathPoints.push(currentPoint);
         usedPoints.add(currentPoint);
     }
 
-    return { points: pathPoints, lines };
+    // ACHTUNG: sicherstellen, dass lines immer ein Array ist
+    return { points: pathPoints, lines: lines || [] };
 }
 
 function _isStraightLine(p1, p2) {

@@ -2,7 +2,7 @@ bl_info = {
     "name": "SpaceHarmony JSON Exporter",
     "blender": (3, 0, 0),
     "category": "Import-Export",
-    "version": (1, 4),
+    "version": (1, 5),
     "author": "SpaceHarmony Team",
     "description": "Exportiert kompatible Formen im Raumharmonik-Snapshot-Format (inkl. Metadaten, Segmente, etc.)"
 }
@@ -20,6 +20,11 @@ def export_spaceharmony_snapshot(filepath):
     obj = bpy.context.active_object
     if obj is None or obj.type != 'MESH':
         raise Exception("Aktives Objekt muss ein Mesh sein.")
+
+    # Temporären Edge Split Modifier anwenden
+    temp_modifier = obj.modifiers.new(name="TempEdgeSplit", type='EDGE_SPLIT')
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.modifier_apply(modifier=temp_modifier.name)
 
     mesh = obj.data
     mesh.calc_loop_triangles()
