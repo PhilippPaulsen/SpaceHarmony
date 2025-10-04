@@ -4,8 +4,8 @@
  * Ein modularer Generator zur Erzeugung von zufälligen und gesetzmäßigen geometrischen Formen
  * in einem 3D-Würfelgitter für das Projekt "SpaceHarmony".
  * 
- * @version 1.8.1
- * @date 2025-10-03
+ * @version 1.9.0
+ * @date 2025-10-04
  */
 
 // --- ES6 Modul-Importe ---
@@ -14,35 +14,12 @@ import path, { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createCanvas } from 'canvas';
 import open from 'open';
+import { Point, Line, Form } from './structures.js';
+import { SYMMETRY_OPERATIONS, SYMMETRY_GROUPS } from './symmetry.js';
 
 // --- ES6 Modul-Kontext für __dirname ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-
-// --- 0. Datenstrukturen ---
-
-class Point {
-    constructor(x, y, z) {
-        this.x = x;
-        this.y = y;
-        this.z = z;
-    }
-}
-
-class Line {
-    constructor(startPoint, endPoint) {
-        this.start = startPoint;
-        this.end = endPoint;
-    }
-}
-
-class Form {
-    constructor() {
-        this.points = [];
-        this.lines = [];
-        this.metadata = {};
-    }
-}
 
 
 // --- 1. Hauptfunktion ---
@@ -52,9 +29,14 @@ function generateForm(gridSize, pointDensity, options = {}) {
     const gridPoints = _defineGrid(gridSize, pointDensity);
     
     let pathResult;
-    if (options.mode === 'maxRegular') {
-        pathResult = _generateMaximallyRegularForm({ gridSize, pointDensity }, options);
-    } else {
+    const genOptions = options.generationOptions || {};
+
+    // Wenn eine Symmetrie-Option (neu oder alt) vorhanden ist, wird der volle Symmetrie-Modus verwendet.
+    if (genOptions.symmetryGroup || options.mode === 'fullSymmetry' || options.mode === 'All Reflections / Rotations') {
+        pathResult = _generateSymmetricForm(gridPoints, { symmetryGroup: 'cubic' });
+    } 
+    else {
+        // Andernfalls wird eine zufällige Linie generiert.
         pathResult = _generateLinePath(gridPoints, options);
     }
 
@@ -66,7 +48,8 @@ function generateForm(gridSize, pointDensity, options = {}) {
     // Metadaten aus dem Generator (falls vorhanden) übernehmen
     if (pathResult.symmetryInfo) {
         validationResults.symmetryProperties = pathResult.symmetryInfo.type;
-        validationResults.symmetryScore = pathResult.symmetryInfo.score;
+        validationResults.symmetryScore = _calculateSymmetryScore(form, pathResult.symmetryInfo.operations);
+        validationResults.symmetries = pathResult.symmetryInfo.operations;
         validationResults.seedShape = pathResult.symmetryInfo.seed;
     }
 
@@ -75,14 +58,157 @@ function generateForm(gridSize, pointDensity, options = {}) {
     return form;
 }
 
+function _generateMetaData(form, options, validationResults) {
+    const id = options.id || Date.now();
+    let sourceName = "Zufallsgenerator v1.9";
+    if (validationResults.symmetryProperties) {
+        sourceName = "All Reflections / Rotations";
+    }
+    const notes = `Startform: ${validationResults.seedShape || 'N/A'}, Symmetrie-Gruppe: ${validationResults.symmetryProperties || 'Keine'}`;
 
-// --- 2. Modulare Hilfsfunktionen ---
+    return {
+        "id": id,
+        "name": `SH_Form_${id}`,
+        "generatedAt": new Date().toISOString(),
+        "gridSize": options.gridSize,
+        "pointDensity": options.pointDensity,
+        "pointCount": form.points.length,
+        "lineCount": form.lines.length,
+        "faceCount": validationResults.faces,
+        "volumeCount": validationResults.volumes,
+        "isClosed": validationResults.volumes > 0,
+        "isConnected": validationResults.isConnected,
+        "symmetry": validationResults.symmetryProperties || "N/A",
+        "symmetryScore": validationResults.symmetryScore || {},
+        "symmetries": validationResults.symmetries || [],
+        "source": sourceName,
+        "notes": notes
+    };
+}
+
+/**
+ * Berechnet den Symmetrie-Score für eine gegebene Form und eine Liste von Symmetrien.
+ * @returns {object} Ein Objekt mit Scores für jede Symmetrie, z.B. { mirrorXY: 0.95, ... }
+ */
+function _calculateSymmetryScore(form, symmetries) {
+    const scores = {};
+    if (!symmetries || symmetries.length === 0) return scores;
+
+    // Da die Formen programmatisch generiert werden, um perfekt symmetrisch zu sein,
+    // setzen wir den Score für die verwendeten Operationen auf 1.0.
+    // Eine echte Symmetrie-Erkennung für eine beliebige Form wäre deutlich komplexer.
+    symmetries.forEach(opKey => {
+        if (typeof opKey === 'string') {
+            scores[opKey] = 1.0;
+        }
+    });
+
+    return scores;
+}
+
+/**
+ * Erzeugt eine symmetrische Form basierend auf einer Symmetriegruppe.
+ */
+function _generateSymmetricForm(gridPoints, options) {
+    const form = new Form();
+    const groupKey = options.symmetryGroup || 'cubic';
+    const operations = SYMMETRY_GROUPS[groupKey];
+
+    if (!operations) {
+        console.error(`Symmetriegruppe '${groupKey}' nicht gefunden.`);
+        return { points: [], lines: [] };
+    }
+
+    // Erzeuge eine einzelne zufällige Linie als "Seed"
+    let p1 = gridPoints[Math.floor(Math.random() * gridPoints.length)];
+    let p2 = gridPoints[Math.floor(Math.random() * gridPoints.length)];
+    let attempts = 0;
+    while (p1 === p2 && attempts < 50) {
+        p2 = gridPoints[Math.floor(Math.random() * gridPoints.length)];
+        attempts++;
+    }
+    if (p1 === p2) return { points: [], lines: [], symmetryInfo: null };
+    
+    form.points.push(p1, p2);
+    form.lines.push(new Line(p1, p2));
+
+    // Wende die komplette Symmetriegruppe auf die Seed-Form an
+    applySymmetryGroup(form, operations);
+
+    const symmetryInfo = {
+        seed: 'randomLine',
+        type: groupKey,
+        operations: operations.map(op => typeof op === 'string' ? op : 'custom_function'),
+        score: 1.0 // Platzhalter, später wird hier der Score berechnet
+    };
+
+    return { points: form.points, lines: form.lines, symmetryInfo };
+}
+
+/**
+ * Wendet eine Gruppe von Symmetrieoperationen auf eine Form an.
+ * Erzeugt alle symmetrischen Äquivalente für die initialen Linien der Form.
+ */
+function applySymmetryGroup(form, operations) {
+    const initialLines = [...form.lines];
+    
+    const pointMap = new Map();
+    const epsilon = 1e-6;
+    const getKey = (p) => `${Math.round(p.x/epsilon)}:${Math.round(p.y/epsilon)}:${Math.round(p.z/epsilon)}`;
+
+    const findOrCreatePoint = (p) => {
+        const key = getKey(p);
+        if (pointMap.has(key)) {
+            return pointMap.get(key);
+        }
+        const newPoint = new Point(p.x, p.y, p.z);
+        pointMap.set(key, newPoint);
+        return newPoint;
+    };
+
+    const lineSet = new Set();
+    const getLineKey = (line) => {
+        const key1 = getKey(line.start);
+        const key2 = getKey(line.end);
+        return [key1, key2].sort().join('-');
+    };
+
+    const newLines = [];
+    for (const line of initialLines) {
+        for (const op of operations) {
+            const opFunc = typeof op === 'string' ? SYMMETRY_OPERATIONS[op] : op;
+            if (!opFunc) {
+                console.warn(`Unbekannte Symmetrieoperation: ${op}`);
+                continue;
+            }
+
+            const newStart = findOrCreatePoint(opFunc(line.start));
+            const newEnd = findOrCreatePoint(opFunc(line.end));
+            const newLine = new Line(newStart, newEnd);
+            const lineKey = getLineKey(newLine);
+
+            if (getKey(newStart) !== getKey(newEnd) && !lineSet.has(lineKey)) {
+                lineSet.add(lineKey);
+                newLines.push(newLine);
+            }
+        }
+    }
+    form.lines = newLines;
+    form.points = Array.from(pointMap.values());
+}
 
 function _defineGrid(gridSize, pointDensity) {
     const points = [];
     const half = (gridSize - 1) / 2;
-    const steps = pointDensity === 1 ? [ -half, half ] : Array.from({length: gridSize}, (_, i) => i - half);
-    
+
+    if (pointDensity < 1) pointDensity = 1;
+
+    // Erzeugt eine Reihe von Schritten von -half bis +half.
+    const steps = Array.from({ length: pointDensity }, (_, i) => {
+        if (pointDensity === 1) return 0; // Einzelner Punkt im Zentrum
+        return -half + i * (gridSize - 1) / (pointDensity - 1);
+    });
+
     for (const x of steps) {
         for (const y of steps) {
             for (const z of steps) {
@@ -122,79 +248,6 @@ function _generateLinePath(gridPoints, options) {
     return { points: pathPoints, lines };
 }
 
-function _generateMaximallyRegularForm(gridConfig, options) {
-    const form = new Form();
-    const half = (gridConfig.gridSize - 1) / 2;
-
-    // --- Bibliothek für geometrische Grundformen ("Seeds") ---
-    const seeds = {
-        pyramid: () => {
-            const p1 = new Point(-half, -half, -half);
-            const p2 = new Point(half, -half, -half);
-            const p3 = new Point(half, half, -half);
-            const p4 = new Point(-half, half, -half);
-            const apex = new Point(0, 0, half);
-            form.points = [p1, p2, p3, p4, apex];
-            form.lines = [
-                new Line(p1, p2), new Line(p2, p3), new Line(p3, p4), new Line(p4, p1), // Basis
-                new Line(p1, apex), new Line(p2, apex), new Line(p3, apex), new Line(p4, apex) // Seiten
-            ];
-        },
-        tetrahedron: () => {
-            const p1 = new Point(half, half, half);
-            const p2 = new Point(half, -half, -half);
-            const p3 = new Point(-half, half, -half);
-            const p4 = new Point(-half, -half, half);
-            form.points = [p1, p2, p3, p4];
-            form.lines = [
-                new Line(p1, p2), new Line(p1, p3), new Line(p1, p4),
-                new Line(p2, p3), new Line(p2, p4), new Line(p3, p4)
-            ];
-        },
-        octahedron: () => {
-            const p1 = new Point(half, 0, 0);
-            const p2 = new Point(-half, 0, 0);
-            const p3 = new Point(0, half, 0);
-            const p4 = new Point(0, -half, 0);
-            const p5 = new Point(0, 0, half);
-            const p6 = new Point(0, 0, -half);
-            form.points = [p1, p2, p3, p4, p5, p6];
-            form.lines = [
-                new Line(p1,p3), new Line(p1,p4), new Line(p1,p5), new Line(p1,p6),
-                new Line(p2,p3), new Line(p2,p4), new Line(p2,p5), new Line(p2,p6),
-                new Line(p3,p5), new Line(p3,p6), new Line(p4,p5), new Line(p4,p6)
-            ];
-        }
-    };
-
-    // --- Bibliothek für Symmetrieoperationen ---
-    const symmetries = {
-        fourFoldZ: ['rotateZ90', 'rotateZ180', 'rotateZ270'],
-        mirrorXY: ['mirrorXY'],
-        fullInversion: ['inversion']
-    };
-
-    // Wähle zufällig eine Grundform und eine Symmetrieoperation
-    const seedKeys = Object.keys(seeds);
-    const symmetryKeys = Object.keys(symmetries);
-    const chosenSeedKey = seedKeys[Math.floor(Math.random() * seedKeys.length)];
-    const chosenSymmetryKey = symmetryKeys[Math.floor(Math.random() * symmetryKeys.length)];
-    
-    // Erzeuge die Grundform
-    seeds[chosenSeedKey]();
-
-    // Wende die Symmetrie an
-    _applySymmetry(form, symmetries[chosenSymmetryKey]);
-    
-    const symmetryInfo = {
-        seed: chosenSeedKey,
-        type: chosenSymmetryKey,
-        score: (1 + symmetries[chosenSymmetryKey].length) / 5 // Einfacher Score, max. ca. 1.0
-    };
-
-    return { points: form.points, lines: form.lines, symmetryInfo };
-}
-
 function _isStraightLine(p1, p2) {
     const dx = Math.abs(p1.x - p2.x);
     const dy = Math.abs(p1.y - p2.y);
@@ -203,78 +256,6 @@ function _isStraightLine(p1, p2) {
     if (nonZeroDeltas.length === 1) return true;
     if (nonZeroDeltas.length > 1 && nonZeroDeltas.every(d => d === nonZeroDeltas[0])) return true;
     return false;
-}
-
-function _applySymmetry(form, operations) {
-    // Hilfsfunktion zur Verwaltung einzigartiger Punkte. Essenziell für korrekte Geometrie.
-    const pointMap = new Map();
-    const epsilon = 1e-6;
-    const getKey = (p) => `${Math.round(p.x/epsilon)}:${Math.round(p.y/epsilon)}:${Math.round(p.z/epsilon)}`;
-
-    form.points.forEach(p => pointMap.set(getKey(p), p));
-
-    const findOrCreatePoint = (p) => {
-        const key = getKey(p);
-        if (pointMap.has(key)) {
-            return pointMap.get(key);
-        }
-        const newPoint = new Point(p.x, p.y, p.z);
-        pointMap.set(key, newPoint);
-        return newPoint;
-    };
-
-    const initialPoints = [...form.points];
-    const initialLines = [...form.lines];
-    let newLines = [];
-
-    // Wende jede Transformation auf alle existierenden Punkte und Linien an
-    for (const op of operations) {
-        const transformedPoints = new Map(); // Map von Originalpunkt zu transformiertem Punkt
-
-        initialPoints.forEach(p => {
-            let tp; // transformierter Punkt
-            switch (op) {
-                case 'mirrorXY': tp = new Point(p.x, p.y, -p.z); break;
-                case 'mirrorYZ': tp = new Point(-p.x, p.y, p.z); break;
-                case 'mirrorXZ': tp = new Point(p.x, -p.y, p.z); break;
-                case 'rotateZ90': tp = new Point(-p.y, p.x, p.z); break;
-                case 'rotateZ180': tp = new Point(-p.x, -p.y, p.z); break;
-                case 'rotateZ270': tp = new Point(p.y, -p.x, p.z); break;
-                case 'inversion': tp = new Point(-p.x, -p.y, -p.z); break;
-                default: tp = new Point(p.x, p.y, p.z);
-            }
-            transformedPoints.set(p, findOrCreatePoint(tp));
-        });
-
-        initialLines.forEach(line => {
-            const newStart = transformedPoints.get(line.start);
-            const newEnd = transformedPoints.get(line.end);
-            if (newStart && newEnd) {
-                newLines.push(new Line(newStart, newEnd));
-            }
-        });
-    }
-
-    // Baue die Form mit einzigartigen Punkten und Linien neu auf
-    const lineSet = new Set();
-    const finalLines = [];
-    
-    const getLineKey = (line) => {
-        const key1 = getKey(line.start);
-        const key2 = getKey(line.end);
-        return [key1, key2].sort().join('-');
-    };
-
-    form.lines.concat(newLines).forEach(line => {
-        const lineKey = getLineKey(line);
-        if (!lineSet.has(lineKey) && getKey(line.start) !== getKey(line.end)) {
-            lineSet.add(lineKey);
-            finalLines.push(line);
-        }
-    });
-
-    form.points = Array.from(pointMap.values());
-    form.lines = finalLines;
 }
 
 function _validateForm(form) {
@@ -401,28 +382,7 @@ function _arePointsCollinear(p1, p2, p3) {
     return Math.abs(crossProductX) < epsilon && Math.abs(crossProductY) < epsilon && Math.abs(crossProductZ) < epsilon;
 }
 
-function _generateMetaData(form, options, validationResults) {
-    const id = options.id || Date.now();
-    const sourceName = options.mode === 'maxRegular' ? "Symmetrischer Generator v1.7" : "Zufallsgenerator v1.7";
-    const notes = options.mode === 'maxRegular' ? `Grundform: ${validationResults.seedShape}, Symmetrie: ${validationResults.symmetryProperties}` : "zufällig generiert";
 
-    return {
-        "id": id,
-        "name": `SH_Form_${id}`,
-        "generatedAt": new Date().toISOString(),
-        "gridSize": options.gridSize,
-        "pointDensity": options.pointDensity,
-        "lineCount": form.lines.length,
-        "faceCount": validationResults.faces,
-        "volumeCount": validationResults.volumes,
-        "isClosed": validationResults.volumes > 0,
-        "isConnected": validationResults.isConnected,
-        "symmetry": validationResults.symmetryProperties || "N/A",
-        "symmetryScore": validationResults.symmetryScore || 0,
-        "source": sourceName,
-        "notes": notes
-    };
-}
 
 
 // --- 3. Exportfunktionen ---

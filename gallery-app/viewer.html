@@ -200,9 +200,35 @@
                     return response.json();
                 })
                 .then(data => {
-                    let metadataText = `Dateiname: ${fileName}\n\n`;
-                    metadataText += JSON.stringify(data.metadata, null, 2);
-                    infoContent.textContent = metadataText;
+                    const meta = data.metadata;
+                    let html = `<strong>Allgemein</strong>\n`;
+                    html += `Name: ${meta.name}\n`;
+                    html += `Quelle: ${meta.source}\n`;
+                    html += `Punkte: ${meta.pointCount}\n`; // Assuming pointCount exists
+                    html += `Linien: ${meta.lineCount}\n`;
+                    html += `Flächen: ${meta.faceCount}\n`;
+                    
+                    if (meta.symmetries && meta.symmetries.length > 0) {
+                        html += `\n<strong>Symmetrien (${meta.symmetries.length})</strong>\n`;
+                        const displayedSyms = meta.symmetries.slice(0, 15);
+                        html += displayedSyms.join(', ');
+                        if (meta.symmetries.length > 15) {
+                            html += `... und ${meta.symmetries.length - 15} weitere.`;
+                        }
+                    }
+
+                    if (meta.symmetryScore) {
+                        html += `\n\n<strong>Symmetrie-Score</strong>\n`;
+                        if (typeof meta.symmetryScore === 'object') {
+                            for (const [key, value] of Object.entries(meta.symmetryScore)) {
+                                html += `${key}: ${value.toFixed(2)}\n`;
+                            }
+                        } else {
+                            html += `Gesamt: ${meta.symmetryScore}`;
+                        }
+                    }
+
+                    infoContent.innerHTML = html;
                     infoPanel.style.display = 'block';
                 })
                 .catch(err => {
