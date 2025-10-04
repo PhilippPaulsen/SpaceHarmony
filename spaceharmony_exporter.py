@@ -1,127 +1,123 @@
 bl_info = {
-    "name": "SpaceHarmony Exporter",
-    "author": "OpenAI / Codex",
-    "version": (1, 0),
+    "name": "SpaceHarmony JSON Exporter",
     "blender": (3, 0, 0),
-    "location": "File > Export > SpaceHarmony (.json)",
-    "description": "Export geometry as SpaceHarmony-compatible JSON",
     "category": "Import-Export",
+    "version": (1, 4),
+    "author": "SpaceHarmony Team",
+    "description": "Exportiert kompatible Formen im Raumharmonik-Snapshot-Format (inkl. Metadaten, Segmente, etc.)"
 }
 
 import bpy
 import json
+import os
+import datetime
 from bpy_extras.io_utils import ExportHelper
+from bpy.types import Operator
 from bpy.props import StringProperty
 from mathutils import Vector
-from datetime import datetime
 
-class ExportSpaceHarmony(bpy.types.Operator, ExportHelper):
-    bl_idname = "export_scene.spaceharmony"
-    bl_label = "Export SpaceHarmony"
-    filename_ext = ".json"
+def export_spaceharmony_snapshot(filepath):
+    obj = bpy.context.active_object
+    if obj is None or obj.type != 'MESH':
+        raise Exception("Aktives Objekt muss ein Mesh sein.")
 
-    filter_glob: StringProperty(
-        default="*.json",
-        options={'HIDDEN'},
-    )
+    mesh = obj.data
+    mesh.calc_loop_triangles()
 
-    def execute(self, context):
-        obj = context.active_object
-        if not obj or obj.type != 'MESH':
-            self.report({'ERROR'}, "Select a mesh object to export.")
-            return {'CANCELLED'}
+    # Punkte erfassen
+    points = [v.co.copy() for v in mesh.vertices]
 
-        mesh = obj.to_mesh()
-        mesh.calc_loop_triangles()
+    # Bounding Box bestimmen
+    min_corner = Vector((min(v.x for v in points), min(v.y for v in points), min(v.z for v in points)))
+    max_corner = Vector((max(v.x for v in points), max(v.y for v in points), max(v.z for v in points)))
+    center = (min_corner + max_corner) * 0.5
+    size_vec = max_corner - min_corner
+    max_extent = max(size_vec.x, size_vec.y, size_vec.z)
+    scale = 1.0 / max_extent if max_extent > 0 else 1.0
 
-        vertices = [list(v.co) for v in mesh.vertices]
-        faces = [list(tri.vertices) for tri in mesh.loop_triangles]
+    # Normalisierung auf [-0.5, 0.5] in größter Ausdehnung
+    normalized_points = [((v - center) * scale) for v in points]
+    points_export = [[round(v.x, 6), round(v.y, 6), round(v.z, 6)] for v in normalized_points]
 
-        segments = []
-        segment_keys = set()
+    # Linien → Segmente
+    segments = []
+    for edge in mesh.edges:
+        i1, i2 = edge.vertices[0], edge.vertices[1]
+        segments.append({
+            "start": points_export[i1],
+            "end": points_export[i2],
+            "indices": [i1, i2],
+            "origin": "manual"
+        })
 
-        def get_segment_key(v_idx1, v_idx2):
-            return tuple(sorted((v_idx1, v_idx2)))
+    # Flächen
+    manual_faces = [list(face.vertices) for face in mesh.polygons if len(face.vertices) >= 3]
 
-        def format_coord(val):
-            return f"{val:.5f}"
+    now = datetime.datetime.utcnow().isoformat() + "Z"
+    label = obj.name if obj.name else "Form"
 
-        def point_key_from_coords(coords):
-            return f"{format_coord(coords[0])}|{format_coord(coords[1])}|{format_coord(coords[2])}"
-
-        def segment_key_from_point_keys(key1, key2):
-            return '->'.join(sorted([key1, key2]))
-
-        for face in faces:
-            for i in range(len(face)):
-                v1_idx = face[i]
-                v2_idx = face[(i + 1) % len(face)]
-                
-                key = get_segment_key(v1_idx, v2_idx)
-                if key not in segment_keys:
-                    segment_keys.add(key)
-                    
-                    v1_coords = vertices[v1_idx]
-                    v2_coords = vertices[v2_idx]
-                    
-                    key1 = point_key_from_coords(v1_coords)
-                    key2 = point_key_from_coords(v2_coords)
-                    
-                    segments.append({
-                        "start": v1_coords,
-                        "end": v2_coords,
-                        "key": segment_key_from_point_keys(key1, key2),
-                        "origin": "import"
-                    })
-
-        default_symmetry_settings = {
-            "reflections": {"xy": True, "yz": True, "zx": True},
-            "rotation": {"axis": "all", "steps": 4},
-            "translation": {"axis": "none", "count": 0, "step": 0.5},
-            "inversion": False,
-            "rotoreflection": {"enabled": False, "axis": "none", "plane": "xy", "angleDeg": 180, "count": 0},
-            "screw": {"enabled": False, "axis": "none", "angleDeg": 180, "distance": 0.5, "count": 0},
-        }
-
-        export_data = {
+    snapshot = {
+        "meta": {
+            "label": label,
+            "pointCount": len(points_export),
+            "lineCount": len(segments),
+            "faceCount": len(manual_faces),
+            "source": "Blender Export",
+            "symmetry": "manual",
+            "type": "manual",
+            "description": "Exported from Blender via SpaceHarmony plugin"
+        },
+        "data": {
             "meta": {
                 "version": "1.0.0",
-                "createdAt": datetime.now().isoformat(),
-                "source": "blender-exporter-v2"
+                "createdAt": now
             },
             "settings": {
                 "gridDivisions": 1,
                 "showPoints": True,
-                "showLines": True,
-                "useCurvedLines": False,
-                "useCurvedSurfaces": False,
-                "showClosedForms": True,
-                "autoCloseFaces": False,
-                "useRegularHighlight": False,
-                "symmetry": default_symmetry_settings
+                "showGrid": False,
+                "showLabels": False,
+                "snapToGrid": False
             },
             "segments": segments,
-            "manualFaces": [],
+            "manualFaces": manual_faces,
             "manualVolumes": [],
             "hiddenFaces": [],
-            "hiddenVolumes": [],
+            "hiddenVolumes": []
         }
+    }
 
-        with open(self.filepath, 'w') as f:
-            json.dump(export_data, f, indent=2)
+    with open(filepath, 'w', encoding='utf-8') as f:
+        json.dump(snapshot, f, indent=2)
 
-        self.report({'INFO'}, f"Exported {len(segments)} segments to {self.filepath}")
-        return {'FINISHED'}
+class ExportSpaceHarmonySnapshot(Operator, ExportHelper):
+    bl_idname = "export_mesh.spaceharmony_snapshot"
+    bl_label = "Export SpaceHarmony Snapshot"
+    filename_ext = ".json"
+
+    filter_glob: StringProperty(
+        default='*.json',
+        options={'HIDDEN'}
+    )
+
+    def execute(self, context):
+        try:
+            export_spaceharmony_snapshot(self.filepath)
+            self.report({'INFO'}, "Erfolgreich exportiert")
+            return {'FINISHED'}
+        except Exception as e:
+            self.report({'ERROR'}, str(e))
+            return {'CANCELLED'}
 
 def menu_func_export(self, context):
-    self.layout.operator(ExportSpaceHarmony.bl_idname, text="SpaceHarmony (.json)")
+    self.layout.operator(ExportSpaceHarmonySnapshot.bl_idname, text="SpaceHarmony Snapshot (.json)")
 
 def register():
-    bpy.utils.register_class(ExportSpaceHarmony)
+    bpy.utils.register_class(ExportSpaceHarmonySnapshot)
     bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
 
 def unregister():
-    bpy.utils.unregister_class(ExportSpaceHarmony)
+    bpy.utils.unregister_class(ExportSpaceHarmonySnapshot)
     bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
 
 if __name__ == "__main__":

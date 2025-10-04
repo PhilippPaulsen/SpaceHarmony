@@ -31,12 +31,10 @@ function generateForm(gridSize, pointDensity, options = {}) {
     let pathResult;
     const genOptions = options.generationOptions || {};
 
-    // Wenn eine Symmetrie-Option (neu oder alt) vorhanden ist, wird der volle Symmetrie-Modus verwendet.
     if (genOptions.symmetryGroup || options.mode === 'fullSymmetry' || options.mode === 'All Reflections / Rotations') {
         pathResult = _generateSymmetricForm(gridPoints, { symmetryGroup: 'cubic' });
     } 
     else {
-        // Andernfalls wird eine zufällige Linie generiert.
         pathResult = _generateLinePath(gridPoints, options);
     }
 
@@ -45,7 +43,6 @@ function generateForm(gridSize, pointDensity, options = {}) {
 
     const validationResults = _validateForm(form);
     
-    // Metadaten aus dem Generator (falls vorhanden) übernehmen
     if (pathResult.symmetryInfo) {
         validationResults.symmetryProperties = pathResult.symmetryInfo.type;
         validationResults.symmetryScore = _calculateSymmetryScore(form, pathResult.symmetryInfo.operations);
@@ -54,7 +51,21 @@ function generateForm(gridSize, pointDensity, options = {}) {
     }
 
     form.metadata = _generateMetaData(form, { gridSize, pointDensity, ...options }, validationResults);
-    
+
+    // --- SKALIERUNG AUF RAUMHARMONIK-KOORDINATENSYSTEM ---
+    const targetGridSize = 3; // Ziel-Koordinatensystem
+    const scaleFactor = targetGridSize / gridSize;
+    // Optional: Mittig auf Ursprung verschieben:
+    // const center = (gridSize - 1) / 2;
+
+    form.points = form.points.map(p => new Point(
+        (p.x /* - center */) * scaleFactor,
+        (p.y /* - center */) * scaleFactor,
+        (p.z /* - center */) * scaleFactor
+    ));
+    form.metadata.coordinateSystem = "raumharmonik";
+    form.metadata.scaledTo = "gridSize3";
+
     return form;
 }
 
