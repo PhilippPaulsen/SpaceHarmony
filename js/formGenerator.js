@@ -72,6 +72,8 @@ function _generateMetaData(form, options, validationResults) {
         "generatedAt": new Date().toISOString(),
         "gridSize": options.gridSize,
         "pointDensity": options.pointDensity,
+        "minSteps": options.minSteps || null,
+        "maxSteps": options.maxSteps || null,
         "pointCount": form.points.length,
         "lineCount": form.lines.length,
         "faceCount": validationResults.faces,

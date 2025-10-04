@@ -122,16 +122,26 @@ Formen werden korrekt erkannt und gespeichert.
 - [ ] Automatische Volumenschließung nach Symmetrieoperationen  
 - [ ] Typisierung: Offen | Geschlossen | Regulär | Symmetrisch  
 - [ ] Rückwärtsformung durch Label-Eingabe  
+- [ ] Download-Buttons für OBJ und JSON-Dateien direkt im Viewer  
+- [ ] Button „Ähnliche Formen generieren“ aus Viewer → Generator mit Parametern  
 
 ### 🧭 Systematik & Klassifikation
 - [ ] Systematische Erzeugung aller Kombinationsformen  
 - [ ] Gruppierung nach Symmetrie & Struktur  
 - [ ] Export für Buch, Galerie, Forschung  
+- [ ] Duplikat-Erkennung in Galerie + Filter/Sortierung  
 
 ### 🖥️ Interface & UX
 - [ ] Minimalistische UI mit Slider, Icons, Tooltips  
 - [ ] Kontextbasiertes Onboarding / Hilfesystem  
-- [ ] Touch-Optimierung für Tablet-Ansicht
+- [ ] Touch-Optimierung für Tablet-Ansicht  
+- [ ] Light/Dark-Mode + Apple Glass Designschema  
+- [ ] Integration mit Meta Quest 3 / VR  
+
+### 🔗 Verknüpfung der Applikationen
+- [ ] „In Raumharmonik öffnen“ (aus Galerie)  
+- [ ] „Form in Generator laden / bearbeiten“  
+- [ ] KI-Vorschläge für ähnliche Formen
 
 ---
 
@@ -176,4 +186,4 @@ Wilhelm Ostwald sah in geometrischer Ordnung den Schlüssel zu einer **universel
 
 ---
 
-*Letzte Aktualisierung: 2025-10-03*
+*Letzte Aktualisierung: 2025-10-04*

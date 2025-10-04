@@ -63,19 +63,33 @@
             padding: 1rem;
             background-color: rgba(0,0,0,0.2);
         }
-        #back-link {
+        .action-button-group {
             position: fixed;
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+        #actions-bottom-left {
             bottom: 1rem;
             left: 1rem;
+        }
+        #actions-top-right {
+            top: 1rem;
+            right: 1rem;
+        }
+        .action-button {
+            display: inline-block;
             background-color: var(--panel-bg-color);
             color: var(--text-color);
             padding: 0.8rem 1.2rem;
             border-radius: 8px;
             text-decoration: none;
             transition: background-color 0.2s ease;
+            border: 1px solid var(--border-color);
         }
-        #back-link:hover {
+        .action-button:hover {
             background-color: var(--accent-color);
+            border-color: var(--accent-color);
         }
         .message-overlay {
             position: fixed;
@@ -101,13 +115,21 @@
     <canvas id="viewer-canvas"></canvas>
     
     <div id="info-panel" style="display: none;">
-        <details>
+        <details open>
             <summary>Metadaten</summary>
             <pre id="info-content"></pre>
         </details>
     </div>
 
-    <a href="index.html" id="back-link">← Zurück zur Galerie</a>
+    <div id="actions-bottom-left" class="action-button-group">
+        <a href="index.html" class="action-button">← Zurück</a>
+        <a href="#" id="download-obj" class="action-button" download>OBJ ⇩</a>
+        <a href="#" id="download-json" class="action-button" download>JSON ⇩</a>
+    </div>
+
+    <div id="actions-top-right" class="action-button-group">
+        <a href="#" id="generate-similar" class="action-button">Ähnliche Formen generieren 🎲</a>
+    </div>
 
     <div id="message-container"></div>
 
@@ -121,7 +143,10 @@
         const infoPanel = document.getElementById('info-panel');
         const infoContent = document.getElementById('info-content');
 
-        const fileName = localStorage.getItem('selectedForm');
+        // Dateiname aus dem LocalStorage oder URL-Parameter holen
+        const urlParams = new URLSearchParams(window.location.search);
+        const fileNameFromUrl = urlParams.get('file');
+        const fileName = fileNameFromUrl || localStorage.getItem('selectedForm');
 
         if (!fileName) {
             messageContainer.innerHTML = `
@@ -130,6 +155,8 @@
                     <p>Bitte gehe zurück zur <a href="index.html">Galerie</a> und wähle eine Form aus.</p>
                 </div>`;
         } else {
+            // Speichere den Dateinamen, falls er aus der URL kam, für einfaches Neuladen
+            localStorage.setItem('selectedForm', fileName);
             init();
         }
 
@@ -155,7 +182,7 @@
             dirLight.position.set(8, 10, 5);
             scene.add(dirLight);
 
-            const modelPath = `/gallery/data/${fileName}`;
+            const modelPath = `../js/generated_forms/${fileName}`;
             const loader = new OBJLoader();
             loader.load(
                 modelPath,
@@ -193,7 +220,7 @@
                 }
             );
             
-            const jsonPath = `/gallery/data/${fileName.replace('.obj', '.json')}`;
+            const jsonPath = `../js/generated_forms/${fileName.replace('.obj', '.json')}`;
             fetch(jsonPath)
                 .then(response => {
                     if (!response.ok) throw new Error('JSON-Datei nicht gefunden.');
@@ -204,7 +231,7 @@
                     let html = `<strong>Allgemein</strong>\n`;
                     html += `Name: ${meta.name}\n`;
                     html += `Quelle: ${meta.source}\n`;
-                    html += `Punkte: ${meta.pointCount}\n`; // Assuming pointCount exists
+                    html += `Punkte: ${meta.pointCount}\n`;
                     html += `Linien: ${meta.lineCount}\n`;
                     html += `Flächen: ${meta.faceCount}\n`;
                     
@@ -230,9 +257,31 @@
 
                     infoContent.innerHTML = html;
                     infoPanel.style.display = 'block';
+
+                    // --- NEUE LOGIK FÜR BUTTONS ---
+                    const objFilename = fileName;
+                    const jsonFilename = fileName.replace('.obj', '.json');
+
+                    // Download-Buttons
+                    document.getElementById('download-obj').href = `../js/generated_forms/${objFilename}`;
+                    document.getElementById('download-obj').download = objFilename;
+                    document.getElementById('download-json').href = `../js/generated_forms/${jsonFilename}`;
+                    document.getElementById('download-json').download = jsonFilename;
+
+                    // "Ähnliche Formen generieren"-Button
+                    const params = new URLSearchParams();
+                    params.set('gridSize', meta.gridSize || 3);
+                    params.set('pointDensity', meta.pointDensity || 3);
+                    params.set('mode', 'fullSymmetry'); // Immer der Symmetrie-Modus
+                    if (meta.minSteps) params.set('minSteps', meta.minSteps);
+                    if (meta.maxSteps) params.set('maxSteps', meta.maxSteps);
+                    
+                    document.getElementById('generate-similar').href = `../generator.html?${params.toString()}`;
+
                 })
                 .catch(err => {
                     console.warn('Metadaten konnten nicht geladen werden:', err);
+                    infoPanel.style.display = 'none';
                 });
 
             window.addEventListener('resize', () => {
