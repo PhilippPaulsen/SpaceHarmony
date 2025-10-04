@@ -11,21 +11,54 @@
         h1 { margin: 0; font-size: 2rem; font-weight: 300; letter-spacing: 1px; }
         main { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 2rem; padding: 2rem; }
         .scene-wrapper {
+            position: relative;
             background-color: #1e1e1e; 
             border: 1px solid #333; 
             border-radius: 8px; 
             overflow: hidden; 
             box-shadow: 0 4px 8px rgba(0,0,0,0.2); 
             transition: transform 0.2s ease;
-            /* Set a fixed aspect-ratio or min-height for placeholders */
             min-height: 320px; 
             display: flex;
             flex-direction: column;
         }
         .scene-wrapper:hover { transform: translateY(-5px); box-shadow: 0 8px 16px rgba(0,0,0,0.3); }
         h2 { font-size: 0.9rem; font-weight: 400; text-align: center; padding: 0.8rem; margin: 0; background-color: #282828; border-bottom: 1px solid #333; word-wrap: break-word; }
-        /* Canvas should fill the available space in the wrapper */
-        canvas { display: block; width: 100%; flex-grow: 1; min-height: 0; }
+        .visual-container {
+            position: relative;
+            flex-grow: 1;
+        }
+        .preview-thumb {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            width: 100%; height: 100%;
+            object-fit: cover;
+            transition: opacity 0.5s ease-in-out;
+            opacity: 1;
+            z-index: 2;
+        }
+        .three-canvas {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            width: 100%; height: 100%;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+            z-index: 1;
+        }
+        .loading-spinner {
+            width: 40px; height: 40px;
+            border: 4px solid #444;
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 3;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        @keyframes spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
         .empty-state { text-align: center; grid-column: 1 / -1; padding: 4rem; }
     </style>
     <script type="importmap">
@@ -46,77 +79,96 @@
         import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-        const objFiles = ["SH_PD3_L9_F0_T0_1.obj","SH_PD3_L10_F0_T0_2.obj","SH_PD3_L15_F0_T0_3.obj","SH_PD3_L9_F0_T0_4.obj","SH_PD3_L12_F0_T0_5.obj","SH_PD3_L12_F0_T0_6.obj","SH_PD3_L22_F0_T0_7.obj","SH_PD3_L13_F0_T0_8.obj","SH_PD3_L16_F0_T0_9.obj","SH_PD3_L25_F0_T0_10.obj","SH_PD3_L6_F0_T0_11.obj","SH_PD3_L15_F0_T0_12.obj","SH_PD3_L21_F0_T0_13.obj","SH_PD3_L21_F0_T0_14.obj","SH_PD3_L19_F0_T0_15.obj","SH_PD3_L20_F0_T0_16.obj","SH_PD3_L22_F0_T0_17.obj","SH_PD3_L12_F0_T0_18.obj","SH_PD3_L13_F0_T0_19.obj","SH_PD3_L18_F0_T0_20.obj","SH_PD3_L22_F0_T0_21.obj","SH_PD3_L21_F0_T0_22.obj","SH_PD3_L21_F0_T0_23.obj","SH_PD3_L8_F0_T0_24.obj","SH_PD3_L22_F0_T0_25.obj","SH_PD3_L17_F0_T0_26.obj","SH_PD3_L20_F0_T0_27.obj","SH_PD3_L23_F0_T0_28.obj","SH_PD3_L7_F0_T0_29.obj","SH_PD3_L13_F0_T0_30.obj","SH_PD3_L10_F0_T0_31.obj","SH_PD3_L9_F0_T0_32.obj","SH_PD3_L24_F0_T0_33.obj","SH_PD3_L20_F0_T0_34.obj","SH_PD3_L23_F0_T0_35.obj","SH_PD3_L16_F0_T0_36.obj","SH_PD3_L25_F0_T0_37.obj","SH_PD3_L15_F0_T0_38.obj","SH_PD3_L18_F0_T0_39.obj","SH_PD3_L17_F0_T0_40.obj","SH_PD3_L14_F0_T0_41.obj","SH_PD3_L16_F0_T0_42.obj","SH_PD3_L13_F0_T0_43.obj","SH_PD3_L17_F0_T0_44.obj","SH_PD3_L9_F0_T0_45.obj","SH_PD3_L7_F0_T0_46.obj","SH_PD3_L7_F0_T0_47.obj","SH_PD3_L13_F0_T0_48.obj","SH_PD3_L9_F0_T0_49.obj","SH_PD3_L23_F0_T0_50.obj"];
+        const objFiles = ["SH_PD3_L12_F10_T0_1.obj"];
         const container = document.getElementById('gallery-container');
 
-        // Map to store active Three.js scenes by their DOM element
         const activeScenes = new Map();
 
         if (objFiles.length === 0) {
             container.innerHTML = '<div class="empty-state"><p>Keine Formen zum Anzeigen gefunden. Führe den Generator aus, um neue Formen zu erstellen.</p></div>';
         }
 
-        // --- IntersectionObserver Callback ---
-        // This function is called whenever an observed element enters or leaves the viewport.
         const observerCallback = (entries, observer) => {
             entries.forEach(entry => {
                 const wrapper = entry.target;
-                const objPath = wrapper.dataset.objPath;
+                const visualContainer = wrapper.querySelector('.visual-container');
+                if (!visualContainer) return;
 
                 if (entry.isIntersecting) {
-                    // Element is visible: If no scene is active for it, create one.
                     if (!activeScenes.has(wrapper)) {
+                        const spinner = visualContainer.querySelector('.loading-spinner');
+                        spinner.style.opacity = '1';
+
                         const canvas = document.createElement('canvas');
-                        wrapper.appendChild(canvas);
+                        canvas.className = 'three-canvas';
+                        visualContainer.appendChild(canvas);
                         
-                        const sceneContext = initScene(canvas, objPath);
+                        const onLoaded = () => {
+                            const thumb = visualContainer.querySelector('.preview-thumb');
+                            if (thumb) thumb.style.opacity = '0';
+                            canvas.style.opacity = '1';
+                            spinner.style.opacity = '0';
+                        };
+
+                        const sceneContext = initScene(canvas, wrapper.dataset.objPath, onLoaded);
                         activeScenes.set(wrapper, sceneContext);
                     }
                 } else {
-                    // Element is not visible: If a scene is active, destroy it to free resources.
                     if (activeScenes.has(wrapper)) {
+                        const thumb = visualContainer.querySelector('.preview-thumb');
+                        if (thumb) thumb.style.opacity = '1';
+
                         destroyScene(activeScenes.get(wrapper));
                         activeScenes.delete(wrapper);
-                        wrapper.querySelector('canvas')?.remove();
+                        visualContainer.querySelector('canvas')?.remove();
                     }
                 }
             });
         };
 
-        // --- Observer Initialization ---
-        const observer = new IntersectionObserver(observerCallback, {
-            // The root margin creates a "buffer" area around the viewport.
-            // Scenes will be loaded when they are 200px away from being visible
-            // and destroyed when they are 200px away after leaving.
-            rootMargin: '200px',
-        });
+        const observer = new IntersectionObserver(observerCallback, { rootMargin: '200px' });
 
-        // --- Create Placeholders and Observe ---
-        // Instead of creating canvases immediately, we create placeholders.
         objFiles.forEach(fileName => {
+            if (!fileName) return;
+            const thumbName = fileName.replace('.obj', '.webp');
             const sceneWrapper = document.createElement('div');
             sceneWrapper.className = 'scene-wrapper';
-            // Store the path in a data attribute for the observer to retrieve.
             sceneWrapper.dataset.objPath = fileName;
-            
+
             const title = document.createElement('h2');
             title.textContent = fileName;
-            
             sceneWrapper.appendChild(title);
-            container.appendChild(sceneWrapper);
 
-            // Start observing the placeholder.
+            const visualContainer = document.createElement('div');
+            visualContainer.className = 'visual-container';
+
+            const spinner = document.createElement('div');
+            spinner.className = 'loading-spinner';
+
+            const img = document.createElement('img');
+            img.src = 'thumbnails/' + thumbName;
+            img.className = 'preview-thumb';
+            img.alt = 'Vorschau von ' + fileName;
+
+            visualContainer.appendChild(spinner);
+            visualContainer.appendChild(img);
+
+            sceneWrapper.appendChild(visualContainer);
+            container.appendChild(sceneWrapper);
             observer.observe(sceneWrapper);
         });
 
-        // --- Scene Initialization ---
-        function initScene(canvas, objPath) {
+        function initScene(canvas, objPath, onLoadedCallback) {
             const scene = new THREE.Scene();
             scene.background = new THREE.Color(0x1e1e1e);
 
-            const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
-            renderer.setSize(canvas.clientWidth, canvas.clientHeight);
-            renderer.setPixelRatio(window.devicePixelRatio);
+            const renderer = new THREE.WebGLRenderer({
+                context,
+                antialias: true,
+                preserveDrawingBuffer: true
+            });
+            renderer.setSize(width, height, false);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Performance-Optimierung für Mobile
 
             const parent = canvas.parentElement;
             const aspect = parent.clientWidth / parent.clientHeight;
@@ -159,6 +211,7 @@
                         }
                     });
                     scene.add(object);
+                    if(onLoadedCallback) onLoadedCallback(); // Callback nach dem Laden ausführen
                 },
                 undefined, 
                 (error) => console.error('Fehler beim Laden von', objPath, error)
@@ -186,7 +239,6 @@
             return { scene, renderer, controls, animationId, resizeListener };
         }
 
-        // --- Scene Destruction ---
         function destroyScene(context) {
             cancelAnimationFrame(context.animationId);
             window.removeEventListener('resize', context.resizeListener);

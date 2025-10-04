@@ -1,0 +1,19 @@
+{
+  "name": "spaceharmony",
+  "version": "1.0.0",
+  "description": "Ein exploratives, interaktives 3D-Projekt zur Umsetzung von Wilhelm Ostwalds Idee einer „Welt der Formen“. Ziel ist es, geometrische Strukturen im Raum zu erzeugen, zu analysieren und durch Symmetrieoperationen zu vervielfältigen – als Grundlage einer raumästhetischen Ordnung.",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "Philipp Paulsen",
+  "license": "MIT",
+  "dependencies": {
+    "canvas": "^3.2.0",
+    "gl": "^8.1.6",
+    "open": "^10.2.0",
+    "three": "^0.180.0"
+  }
+}
