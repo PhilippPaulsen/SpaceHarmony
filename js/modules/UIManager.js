@@ -193,6 +193,14 @@ export class UIManager {
         }
     }
 
+    updateGenerationProgress(current, total) {
+        const status = this.elements['gen-status'];
+        if (status) {
+            const percent = Math.round((current / total) * 100);
+            status.textContent = `Generating... ${current}/${total} (${percent}%)`;
+        }
+    }
+
     showGenerationResults(results) {
         this.setGenerationLoading(false);
         const container = this.elements['gen-results'];

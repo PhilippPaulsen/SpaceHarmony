@@ -95,11 +95,15 @@ export class App {
     _initWorker() {
         this.worker = new Worker('js/workers/generationWorker.js', { type: 'module' });
         this.worker.onmessage = (e) => {
-            const { type, results, message } = e.data;
+            const { type, results, message, current, total } = e.data;
             if (type === 'success') {
                 console.log('Generated forms:', results);
                 if (this.uiManager.showGenerationResults) {
                     this.uiManager.showGenerationResults(results);
+                }
+            } else if (type === 'progress') {
+                if (this.uiManager.updateGenerationProgress) {
+                    this.uiManager.updateGenerationProgress(current, total);
                 }
             } else {
                 console.error('Worker error:', message);

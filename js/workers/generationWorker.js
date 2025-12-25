@@ -21,14 +21,20 @@ self.onmessage = function (e) {
             const form = generateForm(gridSize, pointDensity, options);
 
             if (form.metadata.faceCount >= minFaces) {
-                // Convert complex objects to JSON-serializable structure if needed,
-                // or rely on structured cloning (Three.js objects might need manual serialization or just passing data)
-                // FormGeneratorCore returns clean objects with Vector3s. 
-                // Vector3s are transferable/cloneable? Structured Clone covers many types but custom methods are lost.
-                // It's safer to export to a plain data structure or JSON string.
+                // FormGeneratorCore returns clean objects with Vector3s and Line objects {a,b}.
+                // We construct a safe object to transfer.
+                // explicitly map points to ensure no methods are attached (though structured clone handles basic objects fine)
+                // lines are just {a,b} objects from class Line, which is also fine.
 
-                // Let's strip methods by JSON cycle
-                results.push(JSON.parse(JSON.stringify(form)));
+                const safeForm = {
+                    points: form.points.map(p => ({ x: p.x, y: p.y, z: p.z })),
+                    lines: form.lines.map(l => ({ a: l.a, b: l.b })),
+                    metadata: form.metadata
+                };
+
+                results.push(safeForm);
+
+                self.postMessage({ type: 'progress', current: results.length, total: count });
             }
         }
 

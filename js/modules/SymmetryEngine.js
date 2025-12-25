@@ -1,4 +1,4 @@
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js';
+import * as THREE from 'three';
 
 export class SymmetryEngine {
   constructor() {
@@ -36,6 +36,9 @@ export class SymmetryEngine {
         count: 0,
       },
     };
+
+    // Cache for named symmetry groups to avoid re-calculation
+    this._groupCache = new Map();
   }
 
   setReflection(plane, enabled) {
@@ -341,20 +344,36 @@ export class SymmetryEngine {
   }
 
   _deduplicate(transforms) {
-    const seen = new Set();
     const unique = [];
-    transforms.forEach((matrix) => {
-      const key = Array.from(matrix.elements)
-        .map((value) => {
-          const v = Math.abs(value) < 1e-10 ? 0 : value;
-          return v.toFixed(5);
-        })
-        .join(',');
-      if (!seen.has(key)) {
-        seen.add(key);
-        unique.push(matrix);
+    const eps = 1e-5;
+
+    for (let i = 0; i < transforms.length; i++) {
+      const candidate = transforms[i];
+      let isDuplicate = false;
+
+      // Check against already found unique matrices
+      for (let j = 0; j < unique.length; j++) {
+        const existing = unique[j];
+
+        let match = true;
+        // Compare elements
+        for (let k = 0; k < 16; k++) {
+          if (Math.abs(candidate.elements[k] - existing.elements[k]) > eps) {
+            match = false;
+            break;
+          }
+        }
+
+        if (match) {
+          isDuplicate = true;
+          break;
+        }
       }
-    });
+
+      if (!isDuplicate) {
+        unique.push(candidate);
+      }
+    }
     return unique;
   }
 
@@ -376,7 +395,14 @@ export class SymmetryEngine {
   // --- Symmetry Groups Support ---
 
   getSymmetryGroup(groupName) {
-    return this._generateGroupMatrices(groupName);
+    if (this._groupCache.has(groupName)) {
+      // Return a deep copy to prevent mutation of cached matrices if caller modifies them
+      return this._groupCache.get(groupName).map(m => m.clone());
+    }
+
+    const matrices = this._generateGroupMatrices(groupName);
+    this._groupCache.set(groupName, matrices);
+    return matrices.map(m => m.clone());
   }
 
   _generateGroupMatrices(groupName) {
@@ -422,43 +448,39 @@ export class SymmetryEngine {
 
   _generateGroupFromGenerators(generators) {
     const group = [new THREE.Matrix4().identity()];
-    const seen = new Set();
-    const add = (m) => {
-      const key = this._matrixKey(m);
-      if (!seen.has(key)) {
-        seen.add(key);
-        group.push(m);
-        return true;
-      }
-      return false;
-    };
+    // Use simple array for temporary storage, deduplicate handles checking
 
-    add(group[0]);
+    // We can't rely on Set for objects, so we do an iterative expansion
 
     let changed = true;
     let iterations = 0;
-    while (changed && iterations < 100) {
+
+    // Safety break
+    while (changed && iterations < 12) {
       changed = false;
-      const currentLength = group.length;
-      for (let i = 0; i < currentLength; i++) {
+      const currentLen = group.length;
+      const newFound = [];
+
+      for (let i = 0; i < currentLen; i++) {
         for (const gen of generators) {
           const product = group[i].clone().multiply(gen);
-          if (add(product)) {
-            changed = true;
-          }
+          newFound.push(product);
         }
       }
+
+      // Merge and dedup
+      const potential = [...group, ...newFound];
+      const unique = this._deduplicate(potential);
+
+      if (unique.length > group.length) {
+        // Replace group with strictly larger unique set
+        group.length = 0;
+        group.push(...unique);
+        changed = true;
+      }
+
       iterations++;
     }
     return group;
-  }
-
-  _matrixKey(matrix) {
-    return Array.from(matrix.elements)
-      .map((value) => {
-        const v = Math.abs(value) < 1e-6 ? 0 : value;
-        return v.toFixed(4);
-      })
-      .join(',');
   }
 }

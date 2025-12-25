@@ -4,24 +4,27 @@
  * Core logic for generating forms. 
  * Platform-agnostic: Works in Node.js (CLI) and Browser (Web Worker).
  * 
- * @version 1.0.0
+ * @version 2.0.0
  */
 
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js';
+import * as THREE from 'three';
 import { SymmetryEngine } from './SymmetryEngine.js';
 import { GeometryUtils } from './GeometryUtils.js';
 
+/**
+ * Line represents a connection between two points by their indices in a point array.
+ */
 export class Line {
-    constructor(start, end) {
-        this.start = start.clone();
-        this.end = end.clone();
+    constructor(a, b) {
+        this.a = a;
+        this.b = b;
     }
 }
 
 export class Form {
     constructor() {
-        this.points = [];
-        this.lines = [];
+        this.points = []; // Array<THREE.Vector3>
+        this.lines = [];  // Array<Line>
         this.metadata = {};
     }
 }
@@ -44,33 +47,18 @@ export function generateForm(gridSize, pointDensity, options = {}) {
         pathResult = _generateLinePath(gridPoints, options);
     }
 
+    form.points = pathResult.points;
+    form.lines = pathResult.lines;
+
     // --- Scaling to SpaceHarmony System (Target Grid Size 3) ---
     const targetGridSize = options.targetGridSize || 1;
     // Target Grid Size of 1 means range -0.5 to 0.5 (Scale of SpaceHarmony)
     const sourceSpan = gridSize > 1 ? gridSize - 1 : 1;
     const scaleFactor = targetGridSize / sourceSpan;
 
-    const scaledPoints = pathResult.points.map(p => p.clone().multiplyScalar(scaleFactor));
-    form.points = scaledPoints;
-
-    // Index Map for reconstruction
-    const pointKey = (p) => GeometryUtils.pointKey(p);
-    const pointIndexMap = new Map();
-    form.points.forEach((p, i) => pointIndexMap.set(pointKey(p), i));
-
-    form.lines = [];
-    if (pathResult.lines) {
-        for (const l of pathResult.lines) {
-            const startScaled = l.start.clone().multiplyScalar(scaleFactor);
-            const endScaled = l.end.clone().multiplyScalar(scaleFactor);
-
-            const p1 = _findClosestPoint(startScaled, form.points);
-            const p2 = _findClosestPoint(endScaled, form.points);
-
-            if (p1 && p2 && !p1.equals(p2)) {
-                form.lines.push(new Line(p1, p2));
-            }
-        }
+    // Optimization: Scale points in place. Indices in lines remain valid.
+    for (let i = 0; i < form.points.length; i++) {
+        form.points[i].multiplyScalar(scaleFactor);
     }
 
     // Validation & Metadata
@@ -79,24 +67,13 @@ export function generateForm(gridSize, pointDensity, options = {}) {
         validationResults.symmetryProperties = pathResult.symmetryInfo.type;
         validationResults.seedShape = pathResult.symmetryInfo.seed;
     }
+
+    // Store metadata
     form.metadata = _generateMetaData(form, { gridSize, pointDensity, ...options }, validationResults);
     form.metadata.coordinateSystem = "raumharmonik";
     form.metadata.scaledTo = `gridSize${targetGridSize}`;
 
     return form;
-}
-
-function _findClosestPoint(target, points) {
-    let best = null;
-    let minSq = 1e-9;
-    for (const p of points) {
-        const d = p.distanceToSquared(target);
-        if (d < minSq) {
-            minSq = d;
-            best = p;
-        }
-    }
-    return best;
 }
 
 function _generateMetaData(form, options, validationResults) {
@@ -117,7 +94,7 @@ function _generateMetaData(form, options, validationResults) {
         "lineCount": form.lines.length,
         "faceCount": validationResults.faces,
         "volumeCount": validationResults.volumes,
-        "isClosed": validationResults.volumes > 0,
+        "isClosed": validationResults.volumes > 0, // Simplified definition
         "isConnected": validationResults.isConnected,
         "symmetry": validationResults.symmetryProperties || "N/A",
         "source": sourceName,
@@ -126,7 +103,6 @@ function _generateMetaData(form, options, validationResults) {
 }
 
 function _generateSymmetricForm(gridPoints, options, symmetryEngine) {
-    const form = new Form();
     const groupKey = options.symmetryGroup || 'cubic';
 
     // Get transformations from SymmetryEngine
@@ -140,71 +116,86 @@ function _generateSymmetricForm(gridPoints, options, symmetryEngine) {
     // Seed Line
     if (gridPoints.length < 2) return { points: [], lines: [] };
 
-    let p1 = gridPoints[Math.floor(Math.random() * gridPoints.length)];
-    let p2 = gridPoints[Math.floor(Math.random() * gridPoints.length)];
+    // Select two distinct random points
+    let idx1 = Math.floor(Math.random() * gridPoints.length);
+    let idx2 = Math.floor(Math.random() * gridPoints.length);
     let attempts = 0;
-    while (p1.equals(p2) && attempts < 50) {
-        p2 = gridPoints[Math.floor(Math.random() * gridPoints.length)];
+    while (idx1 === idx2 && attempts < 50) {
+        idx2 = Math.floor(Math.random() * gridPoints.length);
         attempts++;
     }
-    if (p1.equals(p2)) return { points: [], lines: [], symmetryInfo: null };
+    if (idx1 === idx2) return { points: [], lines: [], symmetryInfo: null };
 
-    const seedLine = new Line(p1, p2);
-    form.points.push(p1, p2);
-    form.lines.push(seedLine);
+    // Initialize points and lines
+    // We clone the points because we might modify them (scaling later) or different forms need distinct instances
+    const points = [gridPoints[idx1].clone(), gridPoints[idx2].clone()];
+    const lines = [new Line(0, 1)];
 
     // Apply Transformations
-    applySymmetryGroup(form, transforms);
+    _applySymmetryGroup({ points, lines }, transforms);
 
     return {
-        points: form.points,
-        lines: form.lines,
+        points: points,
+        lines: lines,
         symmetryInfo: { type: groupKey, seed: 'randomLine' }
     };
 }
 
-function applySymmetryGroup(form, matrices) {
-    const initialLines = [...form.lines];
-    const pointMap = new Map();
+/**
+ * Applies symmetry matrices to the form, expanding points and lines.
+ * Uses index-based logic to avoid duplication.
+ */
+function _applySymmetryGroup(formObj, matrices) {
+    const initialLines = [...formObj.lines];
+    const initialPoints = formObj.points;
 
+    // Map to track unique points: key -> newIndex
+    const pointMap = new Map();
     const getKey = (p) => GeometryUtils.pointKey(p);
+
+    // Register initial points
+    initialPoints.forEach((p, i) => {
+        pointMap.set(getKey(p), i);
+    });
 
     const findOrCreatePoint = (p) => {
         const key = getKey(p);
         if (pointMap.has(key)) return pointMap.get(key);
-        const newPoint = p.clone();
-        pointMap.set(key, newPoint);
-        return newPoint;
+
+        const newIndex = formObj.points.length;
+        formObj.points.push(p.clone());
+        pointMap.set(key, newIndex);
+        return newIndex;
     };
 
-    form.points.forEach(p => findOrCreatePoint(p));
-
+    // Set to track unique lines: "min-max" indices
     const lineSet = new Set();
-    const getLineKey = (l) => GeometryUtils.segmentKey(l.start, l.end);
+    const getLineKey = (a, b) => (a < b ? `${a}-${b}` : `${b}-${a}`);
 
-    const newLines = [];
+    // Register initial lines
+    initialLines.forEach(l => lineSet.add(getLineKey(l.a, l.b)));
 
+    // Apply matrices
     for (const line of initialLines) {
+        const p1Original = initialPoints[line.a];
+        const p2Original = initialPoints[line.b];
+
         for (const matrix of matrices) {
-            const newStartPos = line.start.clone().applyMatrix4(matrix);
-            const newEndPos = line.end.clone().applyMatrix4(matrix);
+            const newP1Pos = p1Original.clone().applyMatrix4(matrix);
+            const newP2Pos = p2Original.clone().applyMatrix4(matrix);
 
-            const pStart = findOrCreatePoint(newStartPos);
-            const pEnd = findOrCreatePoint(newEndPos);
+            const idx1 = findOrCreatePoint(newP1Pos);
+            const idx2 = findOrCreatePoint(newP2Pos);
 
-            if (!pStart.equals(pEnd)) {
-                const newLine = new Line(pStart, pEnd);
-                const lKey = getLineKey(newLine);
+            if (idx1 !== idx2) {
+                const lKey = getLineKey(idx1, idx2);
                 if (!lineSet.has(lKey)) {
                     lineSet.add(lKey);
-                    newLines.push(newLine);
+                    formObj.lines.push(new Line(idx1, idx2));
                 }
             }
         }
     }
-
-    form.lines = newLines;
-    form.points = Array.from(pointMap.values());
 }
 
 function _defineGrid(gridSize, pointDensity) {
@@ -212,10 +203,14 @@ function _defineGrid(gridSize, pointDensity) {
     const half = (gridSize - 1) / 2;
     if (pointDensity < 1) pointDensity = 1;
 
-    const steps = Array.from({ length: pointDensity }, (_, i) => {
-        if (pointDensity === 1) return 0;
-        return -half + i * (gridSize - 1) / (pointDensity - 1);
-    });
+    const steps = [];
+    if (pointDensity === 1) {
+        steps.push(0);
+    } else {
+        for (let i = 0; i < pointDensity; i++) {
+            steps.push(-half + i * (gridSize - 1) / (pointDensity - 1));
+        }
+    }
 
     for (const x of steps) {
         for (const y of steps) {
@@ -228,34 +223,66 @@ function _defineGrid(gridSize, pointDensity) {
 }
 
 function _generateLinePath(gridPoints, options) {
-    const usedPoints = new Set();
+    const points = [];
     const lines = [];
-    const pathPoints = [];
+
+    // Track used grid references to avoid self-intersection loops on the exact same points immediately 
+    // strictly speaking, we want to allow path to cross itself but maybe avoid immediate backtrack?
+    // The original logic used a Set of usedPoints to strictly visit unique points. Let's keep that behavior.
+
+    const usedIndices = new Set();
 
     if (gridPoints.length < 2) return { points: [], lines: [] };
 
-    let currentPoint = gridPoints[Math.floor(Math.random() * gridPoints.length)];
-    usedPoints.add(currentPoint);
-    pathPoints.push(currentPoint);
+    // Pick start
+    let currentIdx = Math.floor(Math.random() * gridPoints.length);
+    usedIndices.add(currentIdx);
+
+    // We add the cloned point to our result list
+    points.push(gridPoints[currentIdx].clone());
+    // Map grid index to our result point index (0)
+    let currentResultIdx = 0;
+
+    // We need to map grid indices (source) to result indices (path sequence)
+    // The original logic created a path where points are just a list.
+    // If indices are used for lines, we need to know the index in `points` array.
+    // In a simple path, points[i] connects to points[i+1].
 
     const minSteps = options.minSteps || 3;
     const maxSteps = options.maxSteps || 20;
     const steps = minSteps + Math.floor(Math.random() * (maxSteps - minSteps + 1));
 
     for (let i = 0; i < steps; i++) {
-        const candidates = gridPoints.filter(p => !usedPoints.has(p) && _isStraightLine(currentPoint, p));
+        const currentPos = gridPoints[currentIdx];
+
+        // Find valid candidates
+        const candidates = [];
+        for (let j = 0; j < gridPoints.length; j++) {
+            if (!usedIndices.has(j)) {
+                if (_isStraightLine(currentPos, gridPoints[j])) {
+                    candidates.push(j);
+                }
+            }
+        }
 
         if (candidates.length === 0) break;
 
-        const nextPoint = candidates[Math.floor(Math.random() * candidates.length)];
-        lines.push(new Line(currentPoint, nextPoint));
+        const nextIdx = candidates[Math.floor(Math.random() * candidates.length)];
 
-        currentPoint = nextPoint;
-        pathPoints.push(currentPoint);
-        usedPoints.add(currentPoint);
+        // Add point
+        points.push(gridPoints[nextIdx].clone());
+        const nextResultIdx = points.length - 1;
+
+        // Add line
+        lines.push(new Line(currentResultIdx, nextResultIdx));
+
+        // Advance
+        currentIdx = nextIdx;
+        currentResultIdx = nextResultIdx;
+        usedIndices.add(currentIdx);
     }
 
-    return { points: pathPoints, lines: lines || [] };
+    return { points, lines };
 }
 
 function _isStraightLine(p1, p2) {
@@ -266,9 +293,10 @@ function _isStraightLine(p1, p2) {
     const eps = 1e-6;
     const deltas = [dx, dy, dz].filter(d => d > eps);
 
-    if (deltas.length === 0) return false;
-    if (deltas.length === 1) return true;
+    if (deltas.length === 0) return false; // same point
+    if (deltas.length === 1) return true; // along axis
 
+    // Check diagonal: all non-zero deltas must be equal
     const first = deltas[0];
     return deltas.every(d => Math.abs(d - first) < eps);
 }
@@ -279,67 +307,93 @@ function _validateForm(form) {
         return { faces: 0, volumes: 0, isConnected: false, closedLoops: [] };
     }
 
-    const pKey = (p) => GeometryUtils.pointKey(p);
-    const pMap = new Map();
-    points.forEach((p, i) => pMap.set(pKey(p), i));
-
-    // Build adjacency
+    // Build adjacency list (using indices)
     const adj = new Map();
-    points.forEach((_, i) => adj.set(i, []));
+    // Initialize
+    for (let i = 0; i < points.length; i++) adj.set(i, []);
 
     lines.forEach(l => {
-        const i1 = pMap.get(pKey(l.start));
-        const i2 = pMap.get(pKey(l.end));
-        if (i1 !== undefined && i2 !== undefined && i1 !== i2) {
-            adj.get(i1).push(i2);
-            adj.get(i2).push(i1);
+        const { a, b } = l;
+        if (a !== b && a < points.length && b < points.length) {
+            // Check duplicates
+            if (!adj.get(a).includes(b)) adj.get(a).push(b);
+            if (!adj.get(b).includes(a)) adj.get(b).push(a);
         }
     });
 
     const cycles = [];
-    const cycleSet = new Set();
+    const cycleSet = new Set(); // hash to deduplicate: "sorted_indices"
 
+    // Detect loops of length 3 (triangles) and 4 (squares)
+    // iterate all vertices
     for (let i = 0; i < points.length; i++) {
         const neighbors = adj.get(i);
         if (!neighbors) continue;
 
+        // pairs of neighbors
         for (let j = 0; j < neighbors.length; j++) {
             for (let k = j + 1; k < neighbors.length; k++) {
                 const n1 = neighbors[j];
                 const n2 = neighbors[k];
+
+                // Check Triangle (3-cycle): n1 connected to n2 directly?
                 if (adj.get(n1).includes(n2)) {
-                    const cycle = [i, n1, n2].sort();
+                    // Found 3-cycle: i - n1 - n2 - i
+                    const cycle = [i, n1, n2].sort((a, b) => a - b);
                     const key = cycle.join('-');
                     if (!cycleSet.has(key)) {
                         cycleSet.add(key);
-                        cycles.push(cycle.map(idx => points[idx]));
+                        cycles.push(cycle); // storing indices
+                    }
+                }
+
+                // Check Square (4-cycle): do n1 and n2 have a common neighbor X (other than i)?
+                // n1 neighbors:
+                const neighbors1 = adj.get(n1);
+                for (const x of neighbors1) {
+                    if (x === i) continue; // back to start
+                    if (x === n2) continue; // this would be the triangle check above
+
+                    // Does n2 connect to x?
+                    if (adj.get(n2).includes(x)) {
+                        // Found 4-cycle: i - n1 - x - n2 - i
+                        const cycle = [i, n1, x, n2].sort((a, b) => a - b);
+                        const key = cycle.join('-');
+                        if (!cycleSet.has(key)) {
+                            cycleSet.add(key);
+                            cycles.push(cycle);
+                        }
                     }
                 }
             }
         }
     }
 
+    // Connectivity Check (BFS)
     const visited = new Set();
-    const stack = [0];
-    visited.add(0);
-    while (stack.length) {
-        const curr = stack.pop();
-        const neighbors = adj.get(curr);
-        if (neighbors) {
-            neighbors.forEach(n => {
-                if (!visited.has(n)) {
-                    visited.add(n);
-                    stack.push(n);
+    if (points.length > 0) {
+        const stack = [0];
+        visited.add(0);
+        while (stack.length) {
+            const curr = stack.pop();
+            const neighbors = adj.get(curr);
+            if (neighbors) {
+                for (const n of neighbors) {
+                    if (!visited.has(n)) {
+                        visited.add(n);
+                        stack.push(n);
+                    }
                 }
-            });
+            }
         }
     }
     const isConnected = (visited.size === points.length);
 
     return {
         faces: cycles.length,
-        volumes: 0,
+        volumes: 0, // Placeholder
         isConnected,
+        // Optional: Return cycle vertices for debug/viz if needed, but currently just counting
         closedLoops: cycles
     };
 }

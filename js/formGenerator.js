@@ -4,7 +4,7 @@
  * Command-line interface and Batch Generator for SpaceHarmony.
  * Uses shared logic from js/modules/FormGeneratorCore.js.
  * 
- * @version 2.0.0
+ * @version 2.0.1
  * @date 2025-12-25
  */
 
@@ -60,6 +60,7 @@ export async function generateMultipleForms(config) {
             const baseName = `SH_Form_${i}`;
 
             if (saveJson) {
+                // Ensure form metadata is clean data
                 fs.writeFileSync(path.join(absoluteOutputDir, `${baseName}.json`), JSON.stringify(form, null, 2));
             }
             if (saveObj) {
@@ -96,9 +97,12 @@ function _generateObjContent(form) {
     form.points.forEach((p, i) => pMap.set(GeometryUtils.pointKey(p), i + 1));
 
     form.lines.forEach(l => {
-        const i1 = pMap.get(GeometryUtils.pointKey(l.start));
-        const i2 = pMap.get(GeometryUtils.pointKey(l.end));
-        if (i1 && i2) {
+        // l is now {a, b} indices
+        const i1 = l.a + 1; // 1-based for OBJ
+        const i2 = l.b + 1;
+
+        // Safety check if points exist (should always be true)
+        if (i1 <= form.points.length && i2 <= form.points.length) {
             out += `l ${i1} ${i2}\n`;
         }
     });
@@ -150,10 +154,15 @@ async function _generateThumbnailCanvas(form, thumbPath, width = 400, height = 3
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         form.lines.forEach(l => {
-            const a = toCanvas(project(l.start));
-            const b = toCanvas(project(l.end));
-            ctx.moveTo(a.x, a.y);
-            ctx.lineTo(b.x, b.y);
+            const pStart = form.points[l.a];
+            const pEnd = form.points[l.b];
+
+            if (pStart && pEnd) {
+                const a = toCanvas(project(pStart));
+                const b = toCanvas(project(pEnd));
+                ctx.moveTo(a.x, a.y);
+                ctx.lineTo(b.x, b.y);
+            }
         });
         ctx.stroke();
 
