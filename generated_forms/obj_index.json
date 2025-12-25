@@ -1,27 +1,7 @@
 [
   {
-    "obj": "SH_Form_1.obj",
-    "json": "SH_Form_1.json",
-    "thumbnail": "thumbnails/SH_Form_1.png"
-  },
-  {
-    "obj": "SH_Form_2.obj",
-    "json": "SH_Form_2.json",
-    "thumbnail": "thumbnails/SH_Form_2.png"
-  },
-  {
-    "obj": "SH_Form_3.obj",
-    "json": "SH_Form_3.json",
-    "thumbnail": "thumbnails/SH_Form_3.png"
-  },
-  {
     "obj": "SH_Form_4.obj",
     "json": "SH_Form_4.json",
     "thumbnail": "thumbnails/SH_Form_4.png"
-  },
-  {
-    "obj": "SH_Form_5.obj",
-    "json": "SH_Form_5.json",
-    "thumbnail": "thumbnails/SH_Form_5.png"
   }
 ]

@@ -23,7 +23,8 @@ export class UIManager {
             'rotoreflection-axis', 'rotoreflection-plane', 'rotoreflection-angle', 'rotoreflection-count', 'rotoreflection-enabled',
             'translation-axis', 'translation-count', 'translation-step',
             'screw-axis', 'screw-angle', 'screw-distance', 'screw-count', 'screw-enabled',
-            'face-count'
+            'face-count',
+            'btn-generator', 'generator-modal', 'gen-close', 'gen-start', 'gen-symmetry', 'gen-count', 'gen-minfaces', 'gen-results', 'gen-status'
         ];
 
         ids.forEach(id => {
@@ -89,6 +90,18 @@ export class UIManager {
         // Sliders output update
         this.sliders.forEach(slider => {
             slider.addEventListener('input', () => this._updateSliderOutput(slider));
+        });
+
+        // Generator UI
+        this._bindClick('btn-generator', (e) => this._toggleModal('generator-modal', true));
+        this._bindClick('gen-close', (e) => this._toggleModal('generator-modal', false));
+        this.elements['gen-start']?.addEventListener('click', () => {
+            const config = {
+                symmetryGroup: this._getValue('gen-symmetry'),
+                count: this._getValue('gen-count'),
+                minFaces: this._getValue('gen-minfaces')
+            };
+            if (this.callbacks['onGenerate']) this.callbacks['onGenerate'](config);
         });
     }
 
@@ -167,20 +180,66 @@ export class UIManager {
         }
     }
 
-    populatePresets(presets) {
-        const select = this.elements['preset-select'];
-        if (!select) return;
-        select.innerHTML = '';
-        const defaultOption = document.createElement('option');
-        defaultOption.value = '';
-        defaultOption.textContent = 'Select Preset...';
-        select.appendChild(defaultOption);
+    // ... (existing populatePresets)
 
-        presets.forEach(preset => {
-            const option = document.createElement('option');
-            option.value = preset.id;
-            option.textContent = preset.name;
-            select.appendChild(option);
+    setGenerationLoading(isLoading) {
+        const btn = this.elements['gen-start'];
+        const status = this.elements['gen-status'];
+        if (isLoading) {
+            if (btn) btn.disabled = true;
+            if (status) status.textContent = "Generating... please wait.";
+        } else {
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    showGenerationResults(results) {
+        this.setGenerationLoading(false);
+        const container = this.elements['gen-results'];
+        const status = this.elements['gen-status'];
+        if (status) status.textContent = `Generated ${results.length} forms.`;
+
+        if (!container) return;
+        container.innerHTML = '';
+
+        results.forEach((res, idx) => {
+            const div = document.createElement('div');
+            div.style.background = 'rgba(255,255,255,0.05)';
+            div.style.padding = '10px';
+            div.style.borderRadius = '4px';
+            div.style.display = 'flex';
+            div.style.justifyContent = 'space-between';
+            div.style.alignItems = 'center';
+
+            const info = document.createElement('div');
+            // Basic metadata display
+            const faces = res.metadata ? res.metadata.faceCount : '?';
+            const sym = res.metadata ? res.metadata.symmetry : '?';
+            info.innerHTML = `<strong>#${idx + 1}</strong> - Faces: ${faces} <br><small>${sym}</small>`;
+
+            const btn = document.createElement('button');
+            btn.className = 'action-btn';
+            btn.textContent = 'Load';
+            btn.style.padding = '4px 8px';
+            btn.onclick = () => {
+                if (this.callbacks['onLoadResult']) this.callbacks['onLoadResult'](res);
+                this._toggleModal('generator-modal', false);
+            };
+
+            div.appendChild(info);
+            div.appendChild(btn);
+            container.appendChild(div);
         });
+    }
+
+    showGenerationError(msg) {
+        this.setGenerationLoading(false);
+        const status = this.elements['gen-status'];
+        if (status) status.textContent = "Error: " + msg;
+    }
+
+    _toggleModal(id, show) {
+        const el = this.elements[id];
+        if (el) el.style.display = show ? 'flex' : 'none';
     }
 }

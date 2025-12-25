@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -7,6 +8,39 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/>" />
   <link rel="stylesheet" href="styles.css?v=1.2" />
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet" />
+  <!-- Generator Modal -->
+  <div id="generator-modal" class="modal"
+    style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:1000; align-items:center; justify-content:center;">
+    <div class="modal-content"
+      style="background:var(--bg-panel); padding:20px; border-radius:12px; max-width:500px; width:90%; color:var(--text-main);">
+      <h2 data-i18n="ui.generator_title">Form Generator</h2>
+      <div style="margin:15px 0;">
+        <label>Symmetry Group:
+          <select id="gen-symmetry">
+            <option value="cubic">Cubic (Octahedral)</option>
+            <option value="tetrahedral">Tetrahedral</option>
+          </select>
+        </label>
+      </div>
+      <div style="margin:15px 0;">
+        <label>Count: <input type="number" id="gen-count" value="5" min="1" max="20"></label>
+      </div>
+      <div style="margin:15px 0;">
+        <label>Min Faces: <input type="number" id="gen-minfaces" value="1" min="0"></label>
+      </div>
+      <div style="display:flex; gap:10px; justify-content:flex-end;">
+        <button id="gen-close" class="action-btn" style="background: #555;">Close</button>
+        <button id="gen-start" class="action-btn">Generate</button>
+      </div>
+      <div id="gen-status" style="margin-top:10px; font-style:italic;"></div>
+      <div id="gen-results"
+        style="margin-top:15px; max-height:300px; overflow-y:auto; display:grid; grid-template-columns:1fr; gap:5px;">
+        <!-- Results go here -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
   <script type="importmap">
     {
       "imports": {
@@ -17,6 +51,7 @@
     }
   </script>
 </head>
+
 <body>
   <div class="app-shell">
     <main class="workspace-grid">
@@ -27,7 +62,8 @@
           </div>
           <div class="card-actions">
             <span class="canvas-status" id="face-count">Faces: 0 | Volumes: 0</span>
-            <button type="button" id="theme-toggle" class="icon-button" data-i18n-title="ui.theme.toggle" title="Toggle Theme" aria-label="Toggle Color Scheme">
+            <button type="button" id="theme-toggle" class="icon-button" data-i18n-title="ui.theme.toggle"
+              title="Toggle Theme" aria-label="Toggle Color Scheme">
               <span class="material-icons-outlined" aria-hidden="true">dark_mode</span>
             </button>
           </div>
@@ -47,7 +83,8 @@
               <button type="button" id="redo-button" class="icon-button" data-i18n-title="ui.redo" title="Redo">
                 <span class="material-icons-outlined" aria-hidden="true">redo</span>
               </button>
-              <button type="button" id="random-form-button" class="icon-button" data-i18n-title="ui.random" title="Random Form">
+              <button type="button" id="random-form-button" class="icon-button" data-i18n-title="ui.random"
+                title="Random Form">
                 <span class="material-icons-outlined" aria-hidden="true">auto_awesome</span>
               </button>
               <button type="button" id="clear-button" class="icon-button" data-i18n-title="ui.clear" title="Clear All">
@@ -55,16 +92,20 @@
               </button>
             </div>
             <div class="icon-strip">
-              <button type="button" id="import-json-button" class="icon-button" data-i18n-title="ui.import" title="Import JSON">
+              <button type="button" id="import-json-button" class="icon-button" data-i18n-title="ui.import"
+                title="Import JSON">
                 <span class="material-icons-outlined" aria-hidden="true">upload_file</span>
               </button>
-              <button type="button" id="export-json-button" class="icon-button" data-i18n-title="ui.export.json" title="Export JSON">
+              <button type="button" id="export-json-button" class="icon-button" data-i18n-title="ui.export.json"
+                title="Export JSON">
                 <span class="material-icons-outlined" aria-hidden="true">download</span>
               </button>
-              <button type="button" id="export-obj-button" class="icon-button" data-i18n-title="ui.export.obj" title="Export OBJ">
+              <button type="button" id="export-obj-button" class="icon-button" data-i18n-title="ui.export.obj"
+                title="Export OBJ">
                 <span class="material-icons-outlined" aria-hidden="true">view_in_ar</span>
               </button>
-              <button type="button" id="export-stl-button" class="icon-button" data-i18n-title="ui.export.stl" title="Export STL">
+              <button type="button" id="export-stl-button" class="icon-button" data-i18n-title="ui.export.stl"
+                title="Export STL">
                 <span class="material-icons-outlined" aria-hidden="true">precision_manufacturing</span>
               </button>
             </div>
@@ -73,42 +114,61 @@
                 <span class="material-icons-outlined" aria-hidden="true">collections_bookmark</span>
               </span>
               <select id="preset-select" class="select-field" aria-label="Presets">
-                  <option value="" data-i18n="ui.presets.select">Select Preset...</option>
+                <option value="" data-i18n="ui.presets.select">Select Preset...</option>
               </select>
             </label>
           </div>
 
           <div class="accordion">
-            <details open>
-              <summary data-i18n="ui.display">Display</summary>
-            <div class="slider-field">
-              <label for="grid-density">
-                <span class="material-icons-outlined" aria-hidden="true">grain</span>
-                <span data-i18n="ui.density">Point Density</span>
-              </label>
-              <div class="slider-wrapper">
-                <input type="range" id="grid-density" min="1" max="12" step="1" value="1" />
-                <output id="grid-density-value" for="grid-density">1</output>
+            <div class="control-group">
+              <h3><span data-i18n="ui.display">Anzeige</span></h3>
+              <div class="toggle-row">
+                <span data-i18n="ui.points">Punkte</span>
+                <label class="switch">
+                  <input type="checkbox" id="show-points" checked>
+                  <span class="slider round"></span>
+                </label>
+              </div>
+              <!-- Generator Button -->
+              <div class="toggle-row" style="margin-top: 10px;">
+                <button id="btn-generator" class="action-btn" style="width:100%">
+                  <span data-i18n="ui.generator">Form Generator</span>
+                </button>
               </div>
             </div>
-            <div class="toggle-grid">
-              <label class="icon-toggle" data-i18n-title="ui.show.points" title="Show Points" aria-label="Show Points">
-                <input type="checkbox" id="toggle-points" checked />
-                <span class="material-icons-outlined" aria-hidden="true">grain</span>
-              </label>
-              <label class="icon-toggle" data-i18n-title="ui.show.lines" title="Show Lines" aria-label="Show Lines">
-                <input type="checkbox" id="toggle-lines" checked />
-                <span class="material-icons-outlined" aria-hidden="true">timeline</span>
-              </label>
-              <label class="icon-toggle" data-i18n-title="ui.show.curves" title="Show Curves" aria-label="Show Curves">
-                <input type="checkbox" id="toggle-curved-lines" />
-                <span class="material-icons-outlined" aria-hidden="true">rounded_corner</span>
-              </label>
-              <label class="icon-toggle" data-i18n-title="ui.show.surfaces" title="Show Curved Surfaces" aria-label="Show Curved Surfaces">
-                <input type="checkbox" id="toggle-curved-surfaces" />
-                <span class="material-icons-outlined" aria-hidden="true">texture</span>
-              </label>
-            </div>
+            <details open>
+              <summary data-i18n="ui.display">Display</summary>
+              <div class="slider-field">
+                <label for="grid-density">
+                  <span class="material-icons-outlined" aria-hidden="true">grain</span>
+                  <span data-i18n="ui.density">Point Density</span>
+                </label>
+                <div class="slider-wrapper">
+                  <input type="range" id="grid-density" min="1" max="12" step="1" value="1" />
+                  <output id="grid-density-value" for="grid-density">1</output>
+                </div>
+              </div>
+              <div class="toggle-grid">
+                <label class="icon-toggle" data-i18n-title="ui.show.points" title="Show Points"
+                  aria-label="Show Points">
+                  <input type="checkbox" id="toggle-points" checked />
+                  <span class="material-icons-outlined" aria-hidden="true">grain</span>
+                </label>
+                <label class="icon-toggle" data-i18n-title="ui.show.lines" title="Show Lines" aria-label="Show Lines">
+                  <input type="checkbox" id="toggle-lines" checked />
+                  <span class="material-icons-outlined" aria-hidden="true">timeline</span>
+                </label>
+                <label class="icon-toggle" data-i18n-title="ui.show.curves" title="Show Curves"
+                  aria-label="Show Curves">
+                  <input type="checkbox" id="toggle-curved-lines" />
+                  <span class="material-icons-outlined" aria-hidden="true">rounded_corner</span>
+                </label>
+                <label class="icon-toggle" data-i18n-title="ui.show.surfaces" title="Show Curved Surfaces"
+                  aria-label="Show Curved Surfaces">
+                  <input type="checkbox" id="toggle-curved-surfaces" />
+                  <span class="material-icons-outlined" aria-hidden="true">texture</span>
+                </label>
+              </div>
             </details>
 
             <details open>
@@ -118,26 +178,32 @@
               </summary>
               <div class="control-content">
                 <div class="icon-strip">
-                  <button type="button" id="close-face-button" class="icon-button" data-i18n-title="ui.close.face" title="Close Face">
+                  <button type="button" id="close-face-button" class="icon-button" data-i18n-title="ui.close.face"
+                    title="Close Face">
                     <span class="material-icons-outlined" aria-hidden="true">grid_on</span>
                   </button>
-                  <button type="button" id="close-volume-button" class="icon-button" data-i18n-title="ui.close.volume" title="Close Volume">
+                  <button type="button" id="close-volume-button" class="icon-button" data-i18n-title="ui.close.volume"
+                    title="Close Volume">
                     <span class="material-icons-outlined" aria-hidden="true">view_module</span>
                   </button>
-                  <button type="button" id="auto-close-all-button" class="icon-button" data-i18n-title="ui.auto.close" title="Auto-close All">
+                  <button type="button" id="auto-close-all-button" class="icon-button" data-i18n-title="ui.auto.close"
+                    title="Auto-close All">
                     <span class="material-icons-outlined" aria-hidden="true">select_all</span>
                   </button>
                 </div>
                 <div class="icon-toggle-row">
-                  <label class="icon-toggle" data-i18n-title="ui.show.closed" title="Show Closed Shapes" aria-label="Show Closed Shapes">
+                  <label class="icon-toggle" data-i18n-title="ui.show.closed" title="Show Closed Shapes"
+                    aria-label="Show Closed Shapes">
                     <input type="checkbox" id="toggle-show-closed" checked />
                     <span class="material-icons-outlined" aria-hidden="true">inventory_2</span>
                   </label>
-                  <label class="icon-toggle" data-i18n-title="ui.auto.mode" title="Auto-close Faces" aria-label="Auto-close Faces">
+                  <label class="icon-toggle" data-i18n-title="ui.auto.mode" title="Auto-close Faces"
+                    aria-label="Auto-close Faces">
                     <input type="checkbox" id="toggle-auto-close" />
                     <span class="material-icons-outlined" aria-hidden="true">auto_mode</span>
                   </label>
-                  <label class="icon-toggle" data-i18n-title="ui.highlight" title="Enable Color Highlights" aria-label="Enable Color Highlights">
+                  <label class="icon-toggle" data-i18n-title="ui.highlight" title="Enable Color Highlights"
+                    aria-label="Enable Color Highlights">
                     <input type="checkbox" id="toggle-color-highlights" />
                     <span class="material-icons-outlined" aria-hidden="true">highlight_alt</span>
                   </label>
@@ -152,22 +218,26 @@
               </summary>
               <div class="control-content">
                 <div class="icon-toggle-grid">
-                  <label class="icon-toggle" data-i18n-title="ui.reflection.xy" title="Reflection XY" aria-label="Reflection XY">
+                  <label class="icon-toggle" data-i18n-title="ui.reflection.xy" title="Reflection XY"
+                    aria-label="Reflection XY">
                     <input type="checkbox" id="reflection-xy" checked />
                     <span class="material-icons-outlined" aria-hidden="true">flip</span>
                     <span class="icon-hint">XY</span>
                   </label>
-                  <label class="icon-toggle" data-i18n-title="ui.reflection.yz" title="Reflection YZ" aria-label="Reflection YZ">
+                  <label class="icon-toggle" data-i18n-title="ui.reflection.yz" title="Reflection YZ"
+                    aria-label="Reflection YZ">
                     <input type="checkbox" id="reflection-yz" checked />
                     <span class="material-icons-outlined" aria-hidden="true">flip</span>
                     <span class="icon-hint">YZ</span>
                   </label>
-                  <label class="icon-toggle" data-i18n-title="ui.reflection.zx" title="Reflection ZX" aria-label="Reflection ZX">
+                  <label class="icon-toggle" data-i18n-title="ui.reflection.zx" title="Reflection ZX"
+                    aria-label="Reflection ZX">
                     <input type="checkbox" id="reflection-zx" checked />
                     <span class="material-icons-outlined" aria-hidden="true">flip</span>
                     <span class="icon-hint">ZX</span>
                   </label>
-                  <label class="icon-toggle" data-i18n-title="ui.inversion" title="Enable Inversion" aria-label="Enable Inversion">
+                  <label class="icon-toggle" data-i18n-title="ui.inversion" title="Enable Inversion"
+                    aria-label="Enable Inversion">
                     <input type="checkbox" id="toggle-inversion" />
                     <span class="material-icons-outlined" aria-hidden="true">all_out</span>
                   </label>
@@ -225,7 +295,8 @@
                         <output id="rotoreflection-count-value" for="rotoreflection-count">0</output>
                       </div>
                     </label>
-                    <label class="icon-toggle span-full" data-i18n-title="ui.enable" title="Enable Rotoreflection" aria-label="Enable Rotoreflection">
+                    <label class="icon-toggle span-full" data-i18n-title="ui.enable" title="Enable Rotoreflection"
+                      aria-label="Enable Rotoreflection">
                       <input type="checkbox" id="rotoreflection-enabled" />
                       <span class="material-icons-outlined" aria-hidden="true">toggle_on</span>
                     </label>
@@ -233,7 +304,7 @@
                 </div>
 
                 <!-- Translation and Screw omitted for brevity but similar structure would follow -->
-                
+
               </div>
             </details>
           </div>
@@ -244,10 +315,11 @@
 
   <script type="module">
     import { App } from './js/modules/App.js';
-    
+
     document.addEventListener('DOMContentLoaded', () => {
-        new App();
+      new App();
     });
   </script>
 </body>
+
 </html>

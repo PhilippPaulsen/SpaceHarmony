@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js';
 import { CONFIG } from './Config.js';
 import { SceneManager } from './SceneManager.js';
 import { InputManager } from './InputManager.js';
@@ -18,6 +18,9 @@ export class App {
         this.sceneManager = new SceneManager(this.container);
         this.symmetry = new SymmetryEngine();
         this.localization = new LocalizationManager();
+
+        this.worker = null;
+        this._initWorker();
 
         // State
         this.gridDivisions = 1;
@@ -79,12 +82,88 @@ export class App {
             onToggleColorHighlights: (val) => { this.useRegularHighlight = val; this._rebuildSymmetryObjects(); },
             onExportJSON: () => this._exportJSON(),
             onExportOBJ: () => this._exportOBJ(),
-            onExportSTL: () => this._exportSTL()
+            onExportSTL: () => this._exportSTL(),
+            onGenerate: (config) => this.generateForms(config),
+            onLoadResult: (res) => this.loadGeneratedForm(res)
         });
 
         this._updateGridDensity(1);
         this._startRenderLoop();
         this._initLocalization().then(() => this._updateStatusDisplay());
+    }
+
+    _initWorker() {
+        this.worker = new Worker('js/workers/generationWorker.js', { type: 'module' });
+        this.worker.onmessage = (e) => {
+            const { type, results, message } = e.data;
+            if (type === 'success') {
+                console.log('Generated forms:', results);
+                if (this.uiManager.showGenerationResults) {
+                    this.uiManager.showGenerationResults(results);
+                }
+            } else {
+                console.error('Worker error:', message);
+                if (this.uiManager.showGenerationError) {
+                    this.uiManager.showGenerationError(message);
+                }
+            }
+        };
+    }
+
+    generateForms(config) {
+        if (this.worker) {
+            if (this.uiManager.setGenerationLoading) this.uiManager.setGenerationLoading(true);
+            const workerConfig = {
+                count: config.count || 5,
+                minFaces: config.minFaces || 0,
+                gridSize: 3, // Keep internal grid size 3 for generator logic
+                pointDensity: this.gridDivisions + 1, // Match App density
+                options: {
+                    mode: config.mode,
+                    symmetryGroup: config.symmetryGroup
+                }
+            };
+            this.worker.postMessage(workerConfig);
+        }
+    }
+
+    loadGeneratedForm(formData) {
+        this._clearAll();
+
+        // Simple reconstruction
+        if (formData.lines) {
+            formData.lines.forEach(l => {
+                const start = new THREE.Vector3(l.start.x, l.start.y, l.start.z);
+                const end = new THREE.Vector3(l.end.x, l.end.y, l.end.z);
+
+                // Find grid points to snap to? 
+                // The generator uses grid points.
+                // We can match them to this.gridPoints
+
+                const findP = (v) => {
+                    let best = null, minD = 1e-6;
+                    for (let gp of this.gridPoints) {
+                        const d = gp.distanceTo(v);
+                        if (d < minD) { minD = d; best = gp; }
+                    }
+                    return best;
+                };
+
+                const p1 = findP(start);
+                const p2 = findP(end);
+
+                if (p1 && p2) {
+                    // Create segment manually
+                    // We need indices
+                    const i1 = this.pointIndexLookup.get(GeometryUtils.pointKey(p1));
+                    const i2 = this.pointIndexLookup.get(GeometryUtils.pointKey(p2));
+                    if (i1 !== undefined && i2 !== undefined) {
+                        this._createSegment(i1, i2);
+                    }
+                }
+            });
+        }
+        this._updateStatusDisplay();
     }
 
     async _initLocalization() {
