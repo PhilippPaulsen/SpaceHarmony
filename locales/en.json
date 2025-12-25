@@ -45,5 +45,6 @@
     "ui.step": "Step Size",
     "ui.screw": "Screw Axis",
     "ui.pitch": "Pitch",
+    "ui.generator": "Form Generator",
     "ui.theme.toggle": "Toggle Color Scheme"
 }

@@ -45,5 +45,6 @@
     "ui.step": "Schrittweite",
     "ui.screw": "Schraubung",
     "ui.pitch": "Ganghöhe",
+    "ui.generator": "Form-Generator",
     "ui.theme.toggle": "Farbschema umschalten"
 }
