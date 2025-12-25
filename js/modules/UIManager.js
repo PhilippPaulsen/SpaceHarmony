@@ -21,14 +21,13 @@ export class UIManager {
             'reflection-xy', 'reflection-yz', 'reflection-zx', 'toggle-inversion',
             'rotation-axis',
             'rotoreflection-axis', 'rotoreflection-plane', 'rotoreflection-angle', 'rotoreflection-count', 'rotoreflection-enabled',
-            'translation-axis', 'translation-count', 'translation-step',
-            'screw-axis', 'screw-angle', 'screw-distance', 'screw-count', 'screw-enabled',
             'face-count',
             'btn-generator', 'generator-modal', 'gen-close', 'gen-start', 'gen-symmetry', 'gen-count', 'gen-minfaces', 'gen-results', 'gen-status'
         ];
 
         ids.forEach(id => {
             this.elements[id] = document.getElementById(id);
+            if (!this.elements[id]) console.warn(`UIManager: Element not found: ${id}`);
         });
 
         // Also cache sliders for output updates
@@ -36,6 +35,7 @@ export class UIManager {
     }
 
     _bindEvents() {
+        console.log("UIManager: Binding events...");
         this._bindClick('theme-toggle', 'onThemeToggle');
         this._bindClick('undo-button', 'onUndo');
         this._bindClick('redo-button', 'onRedo');
@@ -43,7 +43,7 @@ export class UIManager {
         this._bindClick('random-form-button', 'onRandomForm');
 
         // Import/Export
-        this._bindClick('import-json-button', 'onImportJSON'); // Logic might need hidden file input
+        this._bindClick('import-json-button', 'onImportJSON');
         this._bindClick('export-json-button', 'onExportJSON');
         this._bindClick('export-obj-button', 'onExportOBJ');
         this._bindClick('export-stl-button', 'onExportSTL');
@@ -75,16 +75,13 @@ export class UIManager {
 
         this._bindChange('rotation-axis', 'onSymmetryChange');
 
-        // Complex Symmetries (Rotoreflection, Translation, Screw)
-        // We can bind them all to a generic change handler that reads current state
+        // Complex Symmetries
         const complexIds = [
-            'rotoreflection-axis', 'rotoreflection-plane', 'rotoreflection-angle', 'rotoreflection-count', 'rotoreflection-enabled',
-            'translation-axis', 'translation-count', 'translation-step',
-            'screw-axis', 'screw-angle', 'screw-distance', 'screw-count', 'screw-enabled'
+            'rotoreflection-axis', 'rotoreflection-plane', 'rotoreflection-angle', 'rotoreflection-count', 'rotoreflection-enabled'
         ];
         complexIds.forEach(id => {
             this._bindChange(id, 'onSymmetryChange');
-            this._bindInput(id, 'onSymmetryChange'); // For sliders to update live? maybe debounce
+            this._bindInput(id, 'onSymmetryChange');
         });
 
         // Sliders output update
@@ -105,21 +102,42 @@ export class UIManager {
         });
     }
 
-    _bindClick(id, callbackName) {
-        if (this.elements[id] && this.callbacks[callbackName]) {
-            this.elements[id].addEventListener('click', (e) => this.callbacks[callbackName](e));
+    _bindClick(id, action) {
+        const el = this.elements[id];
+        if (!el) return;
+
+        if (typeof action === 'function') {
+            el.addEventListener('click', (e) => {
+                console.log(`UIManager: Clicked ${id} (internal)`);
+                action(e);
+            });
+        } else if (typeof action === 'string' && this.callbacks[action]) {
+            el.addEventListener('click', (e) => {
+                console.log(`UIManager: Clicked ${id} (callback: ${action})`);
+                this.callbacks[action](e);
+            });
         }
     }
 
-    _bindChange(id, callbackName) {
-        if (this.elements[id] && this.callbacks[callbackName]) {
-            this.elements[id].addEventListener('change', (e) => this.callbacks[callbackName](this._getValue(id), e));
+    _bindChange(id, action) {
+        const el = this.elements[id];
+        if (!el) return;
+
+        if (typeof action === 'function') {
+            el.addEventListener('change', (e) => action(this._getValue(id), e));
+        } else if (typeof action === 'string' && this.callbacks[action]) {
+            el.addEventListener('change', (e) => this.callbacks[action](this._getValue(id), e));
         }
     }
 
-    _bindInput(id, callbackName) {
-        if (this.elements[id] && this.callbacks[callbackName]) {
-            this.elements[id].addEventListener('input', (e) => this.callbacks[callbackName](this._getValue(id), e));
+    _bindInput(id, action) {
+        const el = this.elements[id];
+        if (!el) return;
+
+        if (typeof action === 'function') {
+            el.addEventListener('input', (e) => action(this._getValue(id), e));
+        } else if (typeof action === 'string' && this.callbacks[action]) {
+            el.addEventListener('input', (e) => this.callbacks[action](this._getValue(id), e));
         }
     }
 
@@ -211,33 +229,104 @@ export class UIManager {
         container.innerHTML = '';
 
         results.forEach((res, idx) => {
-            const div = document.createElement('div');
-            div.style.background = 'rgba(255,255,255,0.05)';
-            div.style.padding = '10px';
-            div.style.borderRadius = '4px';
-            div.style.display = 'flex';
-            div.style.justifyContent = 'space-between';
-            div.style.alignItems = 'center';
+            const wrapper = document.createElement('div');
+            wrapper.style.background = 'var(--surface-strong, #333)'; // Fallback to dark if var missing
+            wrapper.style.padding = '8px';
+            wrapper.style.borderRadius = '6px';
+            wrapper.style.display = 'flex';
+            wrapper.style.gap = '12px';
+            wrapper.style.alignItems = 'center';
+            wrapper.style.marginBottom = '8px';
+            wrapper.style.border = '1px solid var(--border, #555)';
 
+            // Thumbnail
+            const thumbDiv = document.createElement('div');
+            thumbDiv.style.width = '60px';
+            thumbDiv.style.height = '60px';
+            thumbDiv.style.background = '#ffffff'; // Solid white for contrast
+            thumbDiv.style.borderRadius = '4px';
+            thumbDiv.style.display = 'flex';
+            thumbDiv.style.alignItems = 'center';
+            thumbDiv.style.justifyContent = 'center';
+            thumbDiv.innerHTML = this._generateThumbnailSVG(res);
+            wrapper.appendChild(thumbDiv);
+
+            // Info
             const info = document.createElement('div');
-            // Basic metadata display
+            info.style.flex = '1';
             const faces = res.metadata ? res.metadata.faceCount : '?';
             const sym = res.metadata ? res.metadata.symmetry : '?';
-            info.innerHTML = `<strong>#${idx + 1}</strong> - Faces: ${faces} <br><small>${sym}</small>`;
+            info.innerHTML = `<div style="font-weight:600;font-size:0.9rem;">Form #${idx + 1}</div>
+                              <div style="font-size:0.75rem;opacity:0.7;">Faces: ${faces} • ${sym}</div>`;
+            wrapper.appendChild(info);
 
+            // Action
             const btn = document.createElement('button');
             btn.className = 'action-btn';
             btn.textContent = 'Load';
-            btn.style.padding = '4px 8px';
+            btn.style.padding = '6px 12px';
+            btn.style.fontSize = '0.85rem';
             btn.onclick = () => {
                 if (this.callbacks['onLoadResult']) this.callbacks['onLoadResult'](res);
                 this._toggleModal('generator-modal', false);
             };
+            wrapper.appendChild(btn);
 
-            div.appendChild(info);
-            div.appendChild(btn);
-            container.appendChild(div);
+            container.appendChild(wrapper);
         });
+    }
+
+    _generateThumbnailSVG(form) {
+        // Simple Isometric projection
+        // x_screen = (x - z) * cos(30)
+        // y_screen = y + (x + z) * sin(30)  -- approx
+
+        const points = form.points;
+        const lines = form.lines;
+
+        if (!points || points.length === 0) return '';
+
+        // Project points
+        const proj = points.map(p => {
+            // ISO projection
+            const isoX = (p.x - p.z) * 0.707;
+            const isoY = p.y + (p.x + p.z) * 0.4; // simpler tilt
+            return { x: isoX, y: -isoY }; // -y because SVG y goes down
+        });
+
+        // Compute bounds
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        proj.forEach(p => {
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.y > maxY) maxY = p.y;
+        });
+
+        // Add padding
+        const pad = 0.2;
+        const width = Math.max(0.1, maxX - minX);
+        const height = Math.max(0.1, maxY - minY);
+        const cx = (minX + maxX) / 2;
+        const cy = (minY + maxY) / 2;
+        const size = Math.max(width, height) * (1 + pad);
+
+        const viewBox = `${cx - size / 2} ${cy - size / 2} ${size} ${size}`;
+
+        let svg = `<svg viewBox="${viewBox}" width="100%" height="100%" style="overflow:visible;">`;
+
+        // Styles
+        const strokeColor = '#000000'; // Black lines on white background
+        const strokeWidth = size * 0.03;
+
+        lines.forEach(l => {
+            const p1 = proj[l.a];
+            const p2 = proj[l.b];
+            svg += `<line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-opacity="1" vector-effect="non-scaling-stroke" />`;
+        });
+
+        svg += '</svg>';
+        return svg;
     }
 
     showGenerationError(msg) {

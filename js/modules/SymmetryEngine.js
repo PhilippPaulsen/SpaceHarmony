@@ -1,4 +1,5 @@
-import * as THREE from 'three';
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js';
+import { GeometryUtils } from './GeometryUtils.js';
 
 export class SymmetryEngine {
   constructor() {

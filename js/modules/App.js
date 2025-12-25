@@ -94,6 +94,12 @@ export class App {
 
     _initWorker() {
         this.worker = new Worker('js/workers/generationWorker.js', { type: 'module' });
+        this.worker.onerror = (e) => {
+            console.error('Worker Script Error:', e.message, e.filename, e.lineno);
+            if (this.uiManager && this.uiManager.showGenerationError) {
+                this.uiManager.showGenerationError(`Worker Error: ${e.message}`);
+            }
+        };
         this.worker.onmessage = (e) => {
             const { type, results, message, current, total } = e.data;
             if (type === 'success') {
@@ -134,41 +140,194 @@ export class App {
     loadGeneratedForm(formData) {
         this._clearAll();
 
-        // Simple reconstruction
+        // 1. Dynamic Point Merging
+        // Instead of snapping to existing grid, we existing grid + new points.
+        // This guarantees all points exist.
+
+        // We need to map generator Point Index (0..N) to App Grid Index.
+        const genToAppIndex = new Map();
+
+        if (formData.points) {
+            formData.points.forEach((p, genIdx) => {
+                const vec = new THREE.Vector3(p.x, p.y, p.z);
+
+                // Try to find existing close point
+                let bestIdx = -1;
+                let minD = 1e-4; // Tolerance
+
+                for (let i = 0; i < this.gridPoints.length; i++) {
+                    const d = this.gridPoints[i].distanceTo(vec);
+                    if (d < minD) {
+                        minD = d;
+                        bestIdx = i;
+                    }
+                }
+
+                if (bestIdx !== -1) {
+                    genToAppIndex.set(genIdx, bestIdx);
+                } else {
+                    // New Point! Add to App Grid.
+                    const newIdx = this.gridPoints.length;
+                    this.gridPoints.push(vec.clone());
+
+                    // Update lookups
+                    const key = GeometryUtils.pointKey(vec);
+                    this.pointLookup.set(key, vec);
+                    this.pointIndexLookup.set(key, newIdx);
+
+                    genToAppIndex.set(genIdx, newIdx);
+                }
+            });
+
+            // WE MUST REBUILD VISUALS because gridPoints changed
+            this._rebuildVisuals();
+        }
+
+        // 2. Reconstruct Lines
         if (formData.lines) {
             formData.lines.forEach(l => {
-                const start = new THREE.Vector3(l.start.x, l.start.y, l.start.z);
-                const end = new THREE.Vector3(l.end.x, l.end.y, l.end.z);
+                const iA = genToAppIndex.get(l.a);
+                const iB = genToAppIndex.get(l.b);
+                if (iA !== undefined && iB !== undefined && iA !== iB) {
+                    this._createSegment(iA, iB);
+                }
+            });
+        }
 
-                // Find grid points to snap to? 
-                // The generator uses grid points.
-                // We can match them to this.gridPoints
+        // 3. Load Faces with Geometric Deduplication
+        if (formData.faces) {
+            const uniqueGeomKeys = new Set();
 
-                const findP = (v) => {
-                    let best = null, minD = 1e-6;
-                    for (let gp of this.gridPoints) {
-                        const d = gp.distanceTo(v);
-                        if (d < minD) { minD = d; best = gp; }
-                    }
-                    return best;
-                };
+            formData.faces.forEach(faceIndices => {
+                const appIndices = faceIndices.map(idx => genToAppIndex.get(idx)).filter(i => i !== undefined);
 
-                const p1 = findP(start);
-                const p2 = findP(end);
+                if (appIndices.length >= 3) {
+                    // Geometric Dedup: Calculate Centroid + Normal
+                    const points = appIndices.map(i => this.gridPoints[i]);
+                    const center = new THREE.Vector3();
+                    points.forEach(p => center.add(p));
+                    center.divideScalar(points.length);
 
-                if (p1 && p2) {
-                    // Create segment manually
-                    // We need indices
-                    const i1 = this.pointIndexLookup.get(GeometryUtils.pointKey(p1));
-                    const i2 = this.pointIndexLookup.get(GeometryUtils.pointKey(p2));
-                    if (i1 !== undefined && i2 !== undefined) {
-                        this._createSegment(i1, i2);
+                    // Simple Normal (first 3 points)
+                    const v1 = new THREE.Vector3().subVectors(points[1], points[0]);
+                    const v2 = new THREE.Vector3().subVectors(points[2], points[0]);
+                    const norm = new THREE.Vector3().crossVectors(v1, v2).normalize();
+
+                    // Key: Center + Abs(Normal) (to ignore flipping)
+                    const k = `${center.x.toFixed(3)}_${center.y.toFixed(3)}_${center.z.toFixed(3)}__${Math.abs(norm.x).toFixed(3)}_${Math.abs(norm.y).toFixed(3)}_${Math.abs(norm.z).toFixed(3)}`;
+
+                    if (!uniqueGeomKeys.has(k)) {
+                        uniqueGeomKeys.add(k);
+
+                        // Valid unique face
+                        const sortKey = appIndices.slice().sort().join('_');
+                        if (!this.manualFaces.has(sortKey)) {
+                            this.manualFaces.set(sortKey, { indices: appIndices, origin: 'generated' });
+                        }
                     }
                 }
             });
         }
+
+        // 4. Symmetry Reset DEACTIVATED (User Request: "Symmetries Default")
+        // We now keep the symmetry checkboxes ACTIVE.
+        // Geometric Deduplication (Step 3) ensures that applying symmetries to a symmetric loaded form
+        // does not duplicate faces.
+        // 4. Reset Symmetry (User expects loaded object to be the base)
+        // We MUST reset this to avoid visual doubling/chaos.
+        if (this.uiManager) {
+            const symControls = [
+                'reflection-xy', 'reflection-yz', 'reflection-zx', 'toggle-inversion',
+                'rotation-axis',
+                'rotoreflection-enabled', 'screw-enabled'
+            ];
+            symControls.forEach(id => {
+                const el = this.uiManager.elements[id];
+                if (el) {
+                    if (el.type === 'checkbox') el.checked = false;
+                    else if (el.type === 'range' || el.type === 'number') el.value = 0;
+                }
+            });
+            this._updateSymmetry();
+        }
+
+        // 5. Calculate Volume (Robust Component Analysis)
+        // Strict Edge Parity fails on complex self-intersecting stars (104 faces).
+        // Euler Heuristic fails on disjoint squares.
+        // SOLUTION: Count Connected Components of Faces.
+        // If a cluster of faces has >= 4 faces, it is a 'Volume' candidate.
+
+        // Build Adjacency Graph: edgeKey -> [faceIndex, faceIndex...]
+        const edgeToFaces = new Map();
+        const facesArray = Array.from(this.manualFaces.values()); // Order matters for index
+
+        facesArray.forEach((face, fIdx) => {
+            const indices = face.indices;
+            for (let i = 0; i < indices.length; i++) {
+                const a = indices[i];
+                const b = indices[(i + 1) % indices.length];
+                const key = a < b ? `${a}-${b}` : `${b}-${a}`;
+                if (!edgeToFaces.has(key)) edgeToFaces.set(key, []);
+                edgeToFaces.get(key).push(fIdx);
+            }
+        });
+
+        // Find Components (Flood Fill)
+        const visited = new Set();
+        const components = [];
+
+        for (let i = 0; i < facesArray.length; i++) {
+            if (visited.has(i)) continue;
+
+            const cluster = [];
+            const queue = [i];
+            visited.add(i);
+
+            while (queue.length > 0) {
+                const curr = queue.pop();
+                cluster.push(curr);
+
+                // Find neighbors via edges
+                const face = facesArray[curr];
+                const indices = face.indices;
+                for (let j = 0; j < indices.length; j++) {
+                    const a = indices[j];
+                    const b = indices[(j + 1) % indices.length];
+                    const key = a < b ? `${a}-${b}` : `${b}-${a}`;
+                    const neighbors = edgeToFaces.get(key);
+                    if (neighbors) {
+                        neighbors.forEach(nIdx => {
+                            if (!visited.has(nIdx)) {
+                                visited.add(nIdx);
+                                queue.push(nIdx);
+                            }
+                        });
+                    }
+                }
+            }
+            components.push(cluster);
+        }
+
+        // Filter Volumes
+        const validVolumes = components.filter(c => c.length >= 4);
+
+        this.manualVolumes.clear();
+        validVolumes.forEach((comp, idx) => {
+            // Mark faces for rendering
+            comp.forEach(fIdx => {
+                facesArray[fIdx]._isVolume = true;
+            });
+
+            this.manualVolumes.set(`vol_comp_${idx}`, {
+                faces: comp.map(fi => facesArray[fi]),
+                origin: 'component_analysis'
+            });
+        });
+
         this._updateStatusDisplay();
+        this._rebuildSymmetryObjects();
     }
+
 
     async _initLocalization() {
         // Basic language detection
@@ -416,26 +575,59 @@ export class App {
             }
         }
 
-        // Handle Curved Lines / Faces...
-        // (Omitted for brevity in this step, but standard structure applies)
+        // Handle Faces
+        if (this.showClosedForms) {
+            const faceMat = new THREE.MeshBasicMaterial({
+                color: 0x888888,
+                transparent: true,
+                opacity: 0.1, // More transparent for loose faces
+                side: THREE.DoubleSide,
+                depthWrite: false
+            });
+
+            const volumeMat = new THREE.MeshBasicMaterial({
+                color: 0x444444, // Darker gray for volumes
+                transparent: true,
+                opacity: 0.4,
+                side: THREE.DoubleSide,
+                depthWrite: false
+            });
+
+            this.manualFaces.forEach(face => {
+                const mat = face._isVolume ? volumeMat : faceMat;
+
+                transforms.forEach(matrix => {
+                    const points = face.indices.map(i => this.gridPoints[i].clone().applyMatrix4(matrix));
+                    if (points.length >= 3) {
+                        const vertices = [];
+                        const p0 = points[0];
+                        for (let i = 1; i < points.length - 1; i++) {
+                            vertices.push(p0.x, p0.y, p0.z);
+                            vertices.push(points[i].x, points[i].y, points[i].z);
+                            vertices.push(points[i + 1].x, points[i + 1].y, points[i + 1].z);
+                        }
+                        const geom = new THREE.BufferGeometry();
+                        geom.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+
+                        const mesh = new THREE.Mesh(geom, mat);
+                        this.symmetryGroup.add(mesh);
+                    }
+                });
+            });
+        }
 
         this.sceneManager.scene.add(this.symmetryGroup);
 
         // Update UI Counts
-        // Calculate faces/volumes
-        const faceCount = 0; // Placeholder
-        const volCount = 0;
-        this._updateStatusDisplay();
+        const faceCount = this.manualFaces.size * transforms.length; // Approximate (overlaps not deduplicated here)
+        const volCount = this.manualVolumes.size * transforms.length;
+        this._updateStatusDisplay(faceCount, volCount);
     }
 
-    _updateStatusDisplay() {
-        const faceCount = 0; // Placeholder until implemented
-        const volCount = 0; // Placeholder
-
+    _updateStatusDisplay(fCount = 0, vCount = 0) {
         const fLabel = this.localization.translate('ui.faces') || 'Faces';
         const vLabel = this.localization.translate('ui.volumes') || 'Volumes';
-
-        this.uiManager.updateStatus(`${fLabel}: ${faceCount} | ${vLabel}: ${volCount}`);
+        this.uiManager.updateStatus(`${fLabel}: ${fCount} | ${vLabel}: ${vCount}`);
     }
 
     _closeSelectedFace() {

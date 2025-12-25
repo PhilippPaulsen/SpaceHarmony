@@ -7,7 +7,7 @@
  * @version 2.0.0
  */
 
-import * as THREE from 'three';
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js';
 import { SymmetryEngine } from './SymmetryEngine.js';
 import { GeometryUtils } from './GeometryUtils.js';
 
@@ -67,6 +67,106 @@ export function generateForm(gridSize, pointDensity, options = {}) {
         validationResults.symmetryProperties = pathResult.symmetryInfo.type;
         validationResults.seedShape = pathResult.symmetryInfo.seed;
     }
+
+    // Attach detected faces (arrays of point indices)
+    let faces = validationResults.closedLoops || [];
+
+    // ENFORCE SYMMETRY: If we found faces, ensure the full symmetric set is present.
+    // This fixes partially detected forms (e.g. 10 faces instead of 24/48).
+    if (faces.length > 0 && options.symmetryGroup) {
+        try {
+            const symEngine = new SymmetryEngine();
+            const groupKey = options.symmetryGroup;
+            const matrices = symEngine.getGroupMatrices(groupKey);
+
+            if (matrices && matrices.length > 0) {
+                // 1. Build Point Lookup (Vector string -> Index) - NO LONGER NEEDED, using distance check
+                // const pointLookup = new Map();
+                // form.points.forEach((p, i) => {
+                //     const key = GeometryUtils.pointKeyFromCoords(p.x, p.y, p.z);
+                //     pointLookup.set(key, i);
+                // });
+
+                // 2. Symmetrize Faces
+                const uniqueFaceKeys = new Set();
+                const allSymmetricFaces = [];
+                const EPSILON = 0.001; // Tolerance for point matching
+
+                faces.forEach(baseFaceIndices => {
+                    // Convert indices to Vector3s
+                    const faceVerts = baseFaceIndices.map(idx => {
+                        const p = form.points[idx];
+                        return new THREE.Vector3(p.x, p.y, p.z);
+                    });
+
+                    // Apple all symmetries
+                    matrices.forEach(mat => {
+                        // Transform vertices
+                        const transformedVerts = faceVerts.map(v => v.clone().applyMatrix4(mat));
+
+                        // Find matching indices using distance (Robust)
+                        const newIndices = [];
+                        let valid = true;
+
+                        for (let v of transformedVerts) {
+                            let bestIdx = -1;
+                            let minD = Number.MAX_VALUE;
+
+                            // Brute-force search for closest point (safe for < 1000 points)
+                            for (let i = 0; i < form.points.length; i++) {
+                                const p = form.points[i];
+                                const dx = p.x - v.x;
+                                const dy = p.y - v.y;
+                                const dz = p.z - v.z;
+                                const d2 = dx * dx + dy * dy + dz * dz;
+                                if (d2 < minD) {
+                                    minD = d2;
+                                    bestIdx = i;
+                                }
+                            }
+
+                            if (bestIdx !== -1 && minD < (EPSILON * EPSILON)) {
+                                newIndices.push(bestIdx);
+                            } else {
+                                valid = false;
+                                break;
+                            }
+                        }
+
+                        if (valid) {
+                            // Canonicalize key
+                            const sorted = newIndices.slice().sort((a, b) => a - b);
+                            const faceKey = sorted.join('_');
+
+                            if (!uniqueFaceKeys.has(faceKey)) {
+                                uniqueFaceKeys.add(faceKey);
+                                // Ensure standard winding order (if possible) or just use found indices?
+                                // Winding order might be flipped by reflection.
+                                // For visualization (DoubleSide), it doesn't matter much.
+                                // For volume check (edges), direction A->B vs B->A matters if we check orientation.
+                                // But our current Watertight check ignores orientation (checks edge count).
+                                // CRITICAL: We MUST preserve the cycle order for the face to be valid (A->B->C).
+                                // But 'sorted' destroys topology.
+                                // We need to store 'newIndices' (which maps to transformed A->B->C).
+                                // BUT we use 'sorted' only for the UNIQUE KEY.
+                                // We push 'newIndices' (transformed topological order) to the result.
+                                allSymmetricFaces.push(newIndices);
+                            }
+                        }
+                    });
+                });
+
+                // Replace faces with the full set
+                if (allSymmetricFaces.length > 0) {
+                    faces = allSymmetricFaces;
+                }
+            }
+        } catch (err) {
+            console.warn("Symmetrization failed, using detected faces only:", err);
+        }
+    }
+
+    form.faces = faces;
 
     // Store metadata
     form.metadata = _generateMetaData(form, { gridSize, pointDensity, ...options }, validationResults);

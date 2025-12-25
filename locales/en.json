@@ -46,5 +46,6 @@
     "ui.screw": "Screw Axis",
     "ui.pitch": "Pitch",
     "ui.generator": "Form Generator",
+    "ui.generator_title": "Form Generator",
     "ui.theme.toggle": "Toggle Color Scheme"
 }

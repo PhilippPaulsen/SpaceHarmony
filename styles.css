@@ -53,7 +53,8 @@ body {
   background: var(--bg);
   color: var(--text-primary);
   display: flex;
-  justify-content: flex-start; /* Inhalt linksbündig ausrichten */
+  justify-content: flex-start;
+  /* Inhalt linksbündig ausrichten */
   padding: clamp(24px, 5vw, 56px);
 }
 
@@ -93,7 +94,8 @@ body::before {
   transform: translateY(-2px);
 }
 
-.workspace-grid { /* Haupt-Layout für Canvas und Controls */
+.workspace-grid {
+  /* Haupt-Layout für Canvas und Controls */
   display: flex;
   flex-wrap: wrap;
   gap: clamp(18px, 3vw, 28px);
@@ -105,7 +107,8 @@ body::before {
   flex-direction: column;
   gap: 20px;
   align-items: stretch;
-  flex: 2 1 500px; /* Erlaubt dem Canvas mehr Platz, aber mit kleinerer Basis */
+  flex: 2 1 500px;
+  /* Erlaubt dem Canvas mehr Platz, aber mit kleinerer Basis */
 }
 
 .card-header {
@@ -145,7 +148,8 @@ body::before {
   display: grid;
   place-items: center;
   min-height: 320px;
-  overflow: hidden; /* Verhindert, dass der Canvas überläuft */
+  overflow: hidden;
+  /* Verhindert, dass der Canvas überläuft */
 }
 
 #three-canvas {
@@ -157,10 +161,11 @@ body::before {
   background: #0f172a;
 }
 
-.workspace-grid > aside {
+.workspace-grid>aside {
   display: flex;
   flex-direction: column;
-  flex: 1 1 340px; /* Kleinere Basis für besseres Umbrechen */
+  flex: 1 1 340px;
+  /* Kleinere Basis für besseres Umbrechen */
   position: relative;
 }
 
@@ -169,14 +174,17 @@ body::before {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  flex: 1; /* Füllt den <aside> Container */
-  overflow-y: auto; /* Ermöglicht das Scrollen, wenn der Inhalt zu hoch wird */
-  max-height: calc(100vh - 120px); /* Begrenzt die Höhe, um Scrollen zu erzwingen */
+  flex: 1;
+  /* Füllt den <aside> Container */
+  overflow-y: auto;
+  /* Ermöglicht das Scrollen, wenn der Inhalt zu hoch wird */
+  max-height: calc(100vh - 120px);
+  /* Begrenzt die Höhe, um Scrollen zu erzwingen */
 }
 
 .accordion summary,
-.accordion details > summary,
-.control-card > summary {
+.accordion details>summary,
+.control-card>summary {
   list-style: none;
   display: flex;
   align-items: center;
@@ -185,13 +193,14 @@ body::before {
   font-size: 0.9rem;
   cursor: pointer;
   color: var(--text-secondary);
-  padding: 8px 0; /* Vertikalen Abstand für bessere Klickbarkeit */
+  padding: 8px 0;
+  /* Vertikalen Abstand für bessere Klickbarkeit */
   transition: color var(--transition);
 }
 
 .accordion summary::-webkit-details-marker,
-.accordion details > summary::-webkit-details-marker,
-.control-card > summary::-webkit-details-marker {
+.accordion details>summary::-webkit-details-marker,
+.control-card>summary::-webkit-details-marker {
   display: none;
 }
 
@@ -200,15 +209,16 @@ body::before {
   /* Optional: Stil für offenes Akkordeon */
 }
 
-.accordion details[open] > summary,
-.control-card[open] > summary {
+.accordion details[open]>summary,
+.control-card[open]>summary {
   color: var(--accent-strong);
 }
 
 .control-content {
   display: flex;
   flex-direction: column;
-  gap: 16px; /* Kompaktere Abstände */
+  gap: 16px;
+  /* Kompaktere Abstände */
 }
 
 .control-content.transformations {
@@ -307,13 +317,15 @@ body::before {
 .toggle-grid {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(4, 1fr); /* Force 4 items per row */
+  grid-template-columns: repeat(4, 1fr);
+  /* Force 4 items per row */
 }
 
 .icon-toggle-grid {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(4, 1fr); /* Force 4 items per row */
+  grid-template-columns: repeat(4, 1fr);
+  /* Force 4 items per row */
 }
 
 .icon-toggle {
@@ -349,11 +361,11 @@ body::before {
   /* We style the label, not the input itself */
 }
 
-.icon-toggle input:checked + .material-icons-outlined {
+.icon-toggle input:checked+.material-icons-outlined {
   color: var(--accent-strong);
 }
 
-.icon-toggle input:checked + .material-icons-outlined + .icon-hint {
+.icon-toggle input:checked+.material-icons-outlined+.icon-hint {
   color: var(--accent-strong);
 }
 
@@ -425,10 +437,12 @@ output {
   border-radius: var(--radius-medium);
   background: var(--surface-soft);
   padding: 16px;
-  margin-top: 8px; /* Kleinerer Abstand nach oben */
+  margin-top: 8px;
+  /* Kleinerer Abstand nach oben */
   display: flex;
   flex-direction: column;
-  gap: 12px; /* Kompaktere Abstände */
+  gap: 12px;
+  /* Kompaktere Abstände */
 }
 
 .fieldset-header {
@@ -436,7 +450,8 @@ output {
   align-items: center;
   gap: 10px;
   font-weight: 600;
-  color: var(--text-secondary); /* Leichtere Farbe zur Abgrenzung */
+  color: var(--text-secondary);
+  /* Leichtere Farbe zur Abgrenzung */
   font-size: 0.8rem;
   text-transform: uppercase;
 }
@@ -500,4 +515,59 @@ output {
   .toggle-grid {
     grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
   }
+
+  /* Modal Styles */
+  .modal {
+    display: flex !important;
+    /* Force flex when shown (but handled by JS toggle) */
+  }
+
+  .modal-content {
+    background: var(--surface-strong);
+    /* Use a defined variable */
+    border: 1px solid var(--outline);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(22px);
+    /* consistent with glass-panel */
+  }
+
+  .action-btn {
+    background: var(--surface-strong);
+    border: 1px solid var(--outline);
+    padding: 8px 16px;
+    border-radius: var(--radius-small);
+    cursor: pointer;
+    color: var(--text-primary);
+    font-weight: 500;
+    transition: all var(--transition);
+  }
+
+  .action-btn:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+  }
+}
+
+/* Modal Specific Overrides */
+/* Ensure modal content is fully opaque for legibility */
+.modal-content {
+  background: var(--surface-strong);
+  /* Ensure this variable is opaque in themes */
+  backdrop-filter: blur(40px);
+  /* Stronger blur */
+  -webkit-backdrop-filter: blur(40px);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 50px 100px -20px rgba(0, 0, 0, 0.5);
+  /* Strong shadow */
+}
+
+/* Results container scrolling area */
+#gen-results {
+  background: var(--surface-soft);
+  border-radius: var(--radius-small);
+  padding: 8px;
+  border: 1px solid var(--border);
+  max-height: 300px;
+  overflow-y: auto;
+  margin-top: 12px;
 }
