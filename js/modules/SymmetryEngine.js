@@ -372,4 +372,93 @@ export class SymmetryEngine {
     });
     return result;
   }
+
+  // --- Symmetry Groups Support ---
+
+  getSymmetryGroup(groupName) {
+    return this._generateGroupMatrices(groupName);
+  }
+
+  _generateGroupMatrices(groupName) {
+    let matrices = [new THREE.Matrix4().identity()];
+
+    if (groupName === 'cubic') {
+      // Full Octahedral Symmetry (Oh)
+      const generators = [
+        this._rotationMatrix('x', Math.PI / 2), // 90 deg x
+        this._rotationMatrix('y', Math.PI / 2), // 90 deg y
+      ];
+
+      let groupO = this._generateGroupFromGenerators(generators);
+
+      const inversion = this.applyInversion();
+      const groupOh = [...groupO];
+      groupO.forEach(m => {
+        groupOh.push(m.clone().multiply(inversion));
+      });
+
+      return this._deduplicate(groupOh);
+    }
+
+    if (groupName === 'tetrahedral') {
+      // Td
+      const r2x = this._rotationMatrix('x', Math.PI);
+      const r3 = new THREE.Matrix4().set(
+        0, 0, 1, 0,
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 0, 1
+      );
+
+      const groupT = this._generateGroupFromGenerators([r2x, r3]);
+      const mirror = this._reflectionMatrix('xy_diag');
+
+      const groupTd = this._generateGroupFromGenerators([...groupT, mirror]);
+      return this._deduplicate(groupTd);
+    }
+
+    return matrices;
+  }
+
+  _generateGroupFromGenerators(generators) {
+    const group = [new THREE.Matrix4().identity()];
+    const seen = new Set();
+    const add = (m) => {
+      const key = this._matrixKey(m);
+      if (!seen.has(key)) {
+        seen.add(key);
+        group.push(m);
+        return true;
+      }
+      return false;
+    };
+
+    add(group[0]);
+
+    let changed = true;
+    let iterations = 0;
+    while (changed && iterations < 100) {
+      changed = false;
+      const currentLength = group.length;
+      for (let i = 0; i < currentLength; i++) {
+        for (const gen of generators) {
+          const product = group[i].clone().multiply(gen);
+          if (add(product)) {
+            changed = true;
+          }
+        }
+      }
+      iterations++;
+    }
+    return group;
+  }
+
+  _matrixKey(matrix) {
+    return Array.from(matrix.elements)
+      .map((value) => {
+        const v = Math.abs(value) < 1e-6 ? 0 : value;
+        return v.toFixed(4);
+      })
+      .join(',');
+  }
 }

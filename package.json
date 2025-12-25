@@ -14,7 +14,7 @@
   "dependencies": {
     "canvas": "^3.2.0",
     "express": "^4.19.2",
-    "open": "^10.2.0"
-  },
-  "devDependencies": {}
+    "open": "^10.2.0",
+    "three": "^0.182.0"
+  }
 }
