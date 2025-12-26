@@ -87,12 +87,12 @@ export function generateForm(gridSize, pointDensity, options = {}) {
             const matrices = symEngine.getGroupMatrices(groupKey);
 
             if (matrices && matrices.length > 0) {
-                // 1. Build Point Lookup (Vector string -> Index) - NO LONGER NEEDED, using distance check
-                // const pointLookup = new Map();
-                // form.points.forEach((p, i) => {
-                //     const key = GeometryUtils.pointKeyFromCoords(p.x, p.y, p.z);
-                //     pointLookup.set(key, i);
-                // });
+                // 1. Build Point Lookup
+                const pointLookup = new Map();
+                form.points.forEach((p, i) => {
+                    const key = GeometryUtils.pointKey(p);
+                    pointLookup.set(key, i);
+                });
 
                 // 2. Symmetrize Faces
                 const uniqueFaceKeys = new Set();
@@ -116,24 +116,16 @@ export function generateForm(gridSize, pointDensity, options = {}) {
                         let valid = true;
 
                         for (let v of transformedVerts) {
-                            let bestIdx = -1;
-                            let minD = Number.MAX_VALUE;
+                            // O(1) Lookup
+                            // Round to precision to match key format
+                            // Key format from GeometryUtils: pointKey(v)
+                            // But we need to match local grid points.
+                            // We can use the lookup map.
+                            const k = GeometryUtils.pointKey(v);
+                            const idx = pointLookup.get(k);
 
-                            // Brute-force search for closest point (safe for < 1000 points)
-                            for (let i = 0; i < form.points.length; i++) {
-                                const p = form.points[i];
-                                const dx = p.x - v.x;
-                                const dy = p.y - v.y;
-                                const dz = p.z - v.z;
-                                const d2 = dx * dx + dy * dy + dz * dz;
-                                if (d2 < minD) {
-                                    minD = d2;
-                                    bestIdx = i;
-                                }
-                            }
-
-                            if (bestIdx !== -1 && minD < (EPSILON * EPSILON)) {
-                                newIndices.push(bestIdx);
+                            if (idx !== undefined) {
+                                newIndices.push(idx);
                             } else {
                                 valid = false;
                                 break;

@@ -15,9 +15,17 @@ export class App {
             return;
         }
 
+        // Initialize Theme from DOM
+        const initialTheme = document.documentElement.dataset.theme || 'light';
+        // Ensure DOM matches default if missing
+        if (!document.documentElement.dataset.theme) {
+            document.documentElement.dataset.theme = initialTheme;
+        }
+
         this.sceneManager = new SceneManager(this.container);
         this.symmetry = new SymmetryEngine();
         this.localization = new LocalizationManager();
+        this.sceneManager.updateTheme(initialTheme);
 
         this.worker = null;
         this._initWorker();
@@ -136,9 +144,11 @@ export class App {
     _initWorker() {
         this.worker = new Worker('js/workers/generationWorker.js', { type: 'module' });
         this.worker.onerror = (e) => {
-            console.error('Worker Script Error:', e.message, e.filename, e.lineno);
+            console.error('Worker Script Error Event:', e);
+            const msg = e.message || 'Unknown Worker Error';
+            console.error('Worker Details:', msg, e.filename, e.lineno);
             if (this.uiManager && this.uiManager.showGenerationError) {
-                this.uiManager.showGenerationError(`Worker Error: ${e.message}`);
+                this.uiManager.showGenerationError(`Worker Error: ${msg}`);
             }
         };
         this.worker.onmessage = (e) => {
@@ -389,6 +399,14 @@ export class App {
         const next = current === 'dark' ? 'light' : 'dark';
         root.dataset.theme = next;
         this.sceneManager.updateTheme(next);
+
+        // Update Grid Points Color
+        // Light Mode -> Black Nodes (0x000000)
+        // Dark Mode -> White Nodes (0xffffff)
+        if (this.gridMesh) {
+            const color = next === 'dark' ? 0xffffff : 0x000000;
+            this.gridMesh.material.color.setHex(color);
+        }
     }
 
     _updateGridDensity(val) {
@@ -438,7 +456,9 @@ export class App {
 
     _rebuildVisuals() {
         const geom = new THREE.SphereGeometry(0.01, 8, 8);
-        const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const theme = document.documentElement.dataset.theme || 'light';
+        const color = theme === 'dark' ? 0xffffff : 0x000000;
+        const mat = new THREE.MeshBasicMaterial({ color: color });
 
         if (this.gridMesh) {
             this.sceneManager.scene.remove(this.gridMesh);

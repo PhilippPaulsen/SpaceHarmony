@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js';
 import { GeometryUtils } from './GeometryUtils.js';
 
 export class SymmetryEngine {
@@ -404,6 +404,10 @@ export class SymmetryEngine {
     const matrices = this._generateGroupMatrices(groupName);
     this._groupCache.set(groupName, matrices);
     return matrices.map(m => m.clone());
+  }
+
+  getGroupMatrices(groupName) {
+    return this.getSymmetryGroup(groupName);
   }
 
   _generateGroupMatrices(groupName) {
