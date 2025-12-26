@@ -55,6 +55,7 @@ export function generateForm(gridSize, pointDensity, options = {}) {
     // This mimics the original 'completeSurfacesAndVolumes' logic
     if (options.completeForm !== false) { // Default to true
         _completeForm(form, { maxEdges: options.maxEdges || 60 });
+        // console.log(`[FormGen] After complete: P=${form.points.length}, L=${form.lines.length}`);
     }
 
     // --- Scaling to SpaceHarmony System (Target Grid Size 3) ---
@@ -79,8 +80,11 @@ export function generateForm(gridSize, pointDensity, options = {}) {
     let faces = validationResults.closedLoops || [];
 
     // ENFORCE SYMMETRY: If we found faces, ensure the full symmetric set is present.
-    // This fixes partially detected forms (e.g. 10 faces instead of 24/48).
-    if (faces.length > 0 && options.symmetryGroup) {
+    // console.log(`[FormGen] Faces before sym: ${faces.length}`);
+    // FIX: If we used _generateSymmetricForm (pathResult.symmetryInfo exists), the wireframe is ALREADY symmetric.
+    // _validateForm should have found all faces. Applying symmetry matrices again leads to massive duplication (N * GroupSize).
+    // Only apply if we generated an asymmetric path and want to force symmetry on the result.
+    if (faces.length > 0 && options.symmetryGroup && !pathResult.symmetryInfo) {
         try {
             const symEngine = new SymmetryEngine();
             const groupKey = options.symmetryGroup;
@@ -106,7 +110,7 @@ export function generateForm(gridSize, pointDensity, options = {}) {
                         return new THREE.Vector3(p.x, p.y, p.z);
                     });
 
-                    // Apple all symmetries
+                    // Apply all symmetries
                     matrices.forEach(mat => {
                         // Transform vertices
                         const transformedVerts = faceVerts.map(v => v.clone().applyMatrix4(mat));
@@ -171,6 +175,8 @@ export function generateForm(gridSize, pointDensity, options = {}) {
     form.metadata = _generateMetaData(form, { gridSize, pointDensity, ...options }, validationResults);
     form.metadata.coordinateSystem = "raumharmonik";
     form.metadata.scaledTo = `gridSize${targetGridSize}`;
+
+    // console.log(`[FormGen] Final Faces: ${form.faces.length}`);
 
     return form;
 }
