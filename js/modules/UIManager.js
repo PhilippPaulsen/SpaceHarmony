@@ -198,7 +198,26 @@ export class UIManager {
         }
     }
 
-    // ... (existing populatePresets)
+    populatePresets(presets) {
+        const select = this.elements['preset-select'];
+        if (!select) return;
+
+        // Clear existing (except maybe first default?)
+        select.innerHTML = '';
+
+        // Add default option
+        const defOpt = document.createElement('option');
+        defOpt.value = 'none';
+        defOpt.textContent = 'Preset wählen …';
+        select.appendChild(defOpt);
+
+        presets.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p.id;
+            opt.textContent = p.label;
+            select.appendChild(opt);
+        });
+    }
 
     setGenerationLoading(isLoading) {
         const btn = this.elements['gen-start'];

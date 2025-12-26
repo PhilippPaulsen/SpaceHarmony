@@ -50,6 +50,13 @@ export function generateForm(gridSize, pointDensity, options = {}) {
     form.points = pathResult.points;
     form.lines = pathResult.lines;
 
+    // --- Completion Step (The "Lawful" part) ---
+    // Try to complete the form into closed surfaces/volumes
+    // This mimics the original 'completeSurfacesAndVolumes' logic
+    if (options.completeForm !== false) { // Default to true
+        _completeForm(form, { maxEdges: options.maxEdges || 60 });
+    }
+
     // --- Scaling to SpaceHarmony System (Target Grid Size 3) ---
     const targetGridSize = options.targetGridSize || 1;
     // Target Grid Size of 1 means range -0.5 to 0.5 (Scale of SpaceHarmony)
@@ -496,4 +503,140 @@ function _validateForm(form) {
         // Optional: Return cycle vertices for debug/viz if needed, but currently just counting
         closedLoops: cycles
     };
+}
+
+/**
+ * Tries to add segments to complete faces and volumes.
+ * Ported/Adapted from old/raumharmonik.js completeSurfacesAndVolumes
+ */
+function _completeForm(form, options = {}) {
+    // Reduced default from 60 to 24 to prevent "too many faces"
+    const maxEdges = options.maxEdges || 24;
+
+    // Helper to find index of point
+    // We assume form.points are unique references? No, they might be clones.
+    // We need robust lookup.
+    const pointKeyMap = new Map();
+    form.points.forEach((p, i) => pointKeyMap.set(GeometryUtils.pointKey(p), i));
+
+    const getPointKey = (idx) => GeometryUtils.pointKey(form.points[idx]);
+    const getKeyFromVec = (v) => GeometryUtils.pointKey(v);
+
+    // Build Adjacency
+    const adjacency = new Map(); // index -> Set(index)
+    const lineSet = new Set();
+    const getLineKey = (a, b) => (a < b ? `${a}-${b}` : `${b}-${a}`);
+
+    form.lines.forEach(l => {
+        if (!adjacency.has(l.a)) adjacency.set(l.a, new Set());
+        if (!adjacency.has(l.b)) adjacency.set(l.b, new Set());
+        adjacency.get(l.a).add(l.b);
+        adjacency.get(l.b).add(l.a);
+        lineSet.add(getLineKey(l.a, l.b));
+    });
+
+    const addLine = (a, b) => {
+        const key = getLineKey(a, b);
+        if (lineSet.has(key)) return false;
+        if (form.lines.length >= maxEdges) return false;
+
+        lineSet.add(key);
+        form.lines.push(new Line(a, b));
+
+        if (!adjacency.has(a)) adjacency.set(a, new Set());
+        if (!adjacency.has(b)) adjacency.set(b, new Set());
+        adjacency.get(a).add(b);
+        adjacency.get(b).add(a);
+        return true;
+    };
+
+    // 1. Detect Faces and add closing edges for "almost faces"
+    // The old logic iterated existing edges and looked for a 3rd point.
+    // It also added edges where "triangle logic" suggested a face.
+    // Simplified: Look for 2 connected edges (A-B, B-C) and check if A-C closes a valid face (planar/area check).
+
+    // Iterating all connected triplets is expensive. 
+    // Let's stick to the key logic: FIND FACES first.
+
+    // We iterate existing adjacency to find potential triangles.
+    // A-B exists. B-C exists. Check A-C.
+
+    // Actually, the goal is to ADD missing segments.
+    // If we have A-B and B-C, should we add A-C?
+    // Only if it forms a "nice" face (small area? regular?).
+    // Old code checked `areaVec.lengthSq() > 1e-6` (not zero) and added it if missing.
+    // It essentially triangulated the graph.
+
+    const nodes = Array.from(adjacency.keys());
+
+    for (const keyB of nodes) {
+        if (form.lines.length >= maxEdges) break;
+
+        const neighbors = Array.from(adjacency.get(keyB));
+        for (let i = 0; i < neighbors.length; i++) {
+            for (let j = i + 1; j < neighbors.length; j++) {
+                const keyA = neighbors[i];
+                const keyC = neighbors[j];
+
+                // Potential triangle A-B-C
+                // Check if A-C exists
+                if (adjacency.get(keyA)?.has(keyC)) continue; // Already closed
+
+                // Start simple: Always close triangles if maxEdges not reached
+                // This effectively creates a truss structure
+                addLine(keyA, keyC);
+                if (form.lines.length >= maxEdges) break;
+            }
+            if (form.lines.length >= maxEdges) break;
+        }
+    }
+
+    // 2. Volume Completion (Tetrahedrons)
+    // If we have a triangle A-B-C, and a point D connected to A,B,C...
+    // The old logic looked for "Missing" edges in a set of 4 points.
+
+    // Let's re-scan adjacency for triangles.
+    // For each triangle A-B-C:
+    //   Find D such that D connects to A and B. 
+    //   Check connection to C. If missing, ADD D-C.
+
+    // Re-build faces list from current state
+    const currentFaces = [];
+    nodes.forEach(a => {
+        const nA = adjacency.get(a);
+        if (!nA) return;
+        nA.forEach(b => {
+            if (b <= a) return;
+            const nB = adjacency.get(b);
+            if (!nB) return;
+            nB.forEach(c => {
+                if (c <= b) return;
+                if (nA.has(c)) {
+                    currentFaces.push([a, b, c]);
+                }
+            });
+        });
+    });
+
+    currentFaces.forEach(face => {
+        if (form.lines.length >= maxEdges) return;
+        const [a, b, c] = face;
+
+        // Find a point D that is connected to at least 2 of (a,b,c)
+        nodes.forEach(d => {
+            if (d === a || d === b || d === c) return;
+            const conA = adjacency.get(d)?.has(a);
+            const conB = adjacency.get(d)?.has(b);
+            const conC = adjacency.get(d)?.has(c);
+
+            const count = (conA ? 1 : 0) + (conB ? 1 : 0) + (conC ? 1 : 0);
+
+            if (count >= 2) {
+                // If connected to 2, connect to the 3rd to make a tetrahedron
+                if (!conA) addLine(d, a);
+                else if (!conB) addLine(d, b);
+                else if (!conC) addLine(d, c);
+            }
+        });
+    });
 }

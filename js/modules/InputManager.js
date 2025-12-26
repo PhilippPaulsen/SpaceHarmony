@@ -8,6 +8,7 @@ export class InputManager {
         this.callbacks = callbacks; // { onClick: (intersect) => {}, onDrag: () => {} }
 
         this.raycaster = new THREE.Raycaster();
+        this.raycaster.params.Points.threshold = 0.3; // Significantly increased threshold for easier clicking
         this.pointer = new THREE.Vector2();
         this.pointerDown = false;
         this.dragging = false;
@@ -51,7 +52,8 @@ export class InputManager {
         this._updatePointer(event);
         if (this.pointerDown) {
             const distSq = this.pointer.distanceToSquared(this.pointerDownPos);
-            if (distSq > (CONFIG.DRAG_THRESHOLD_SQ / (this.sceneManager.renderer.domElement.height ** 2))) {
+            // Increased threshold for easier clicking without accidental drag
+            if (distSq > (CONFIG.DRAG_THRESHOLD_SQ * 2 / (this.sceneManager.renderer.domElement.height ** 2))) {
                 // Scaling threshold to normalized coords is a bit tricky, simpler to assume if moved > X pixels
                 // Let's use simple logic:
                 this.dragging = true;
@@ -89,11 +91,20 @@ export class InputManager {
         const intersects = this.raycaster.intersectObjects(this.pickableMeshes, false); // false for recursive?
 
         if (intersects.length > 0) {
-            // Logic to find best intersection (e.g. point vs grid)
-            // Usually the first one is closest.
-            // But we might want points to have priority over grid planes.
+            // Sort by distance first
+            intersects.sort((a, b) => a.distance - b.distance);
 
-            // Filter logic can be here
+            // Prioritize Points (InstanceMesh) over Grid/Other
+            // If a point is within a very close range of the first intersection, prefer it.
+            const first = intersects[0];
+            const tolerance = 0.5; // If point is within 0.5 units of the closest hit (likely grid), take point.
+
+            const pointHit = intersects.find(hit => hit.object.name === 'GridPoints' || (hit.object.instanceMatrix !== undefined));
+
+            if (pointHit && (pointHit.distance - first.distance < tolerance)) {
+                return pointHit;
+            }
+
             return intersects[0];
         }
         return null;
