@@ -12,15 +12,16 @@ export class UIManager {
         const ids = [
             'theme-toggle',
             'undo-button', 'redo-button', 'clear-button', 'random-form-button',
-            'import-json-button', 'export-json-button', 'export-obj-button', 'export-stl-button',
-            'preset-select',
+            'import-json-button', 'export-json-button', 'export-obj-button', 'export-png-button',
             'grid-density',
             'toggle-points', 'toggle-lines', 'toggle-curved-lines', 'toggle-curved-surfaces',
             'close-face-button', 'close-volume-button', 'auto-close-all-button',
             'toggle-show-closed', 'toggle-auto-close', 'toggle-color-highlights', 'toggle-auto-rotate',
             'reflection-xy', 'reflection-yz', 'reflection-zx', 'toggle-inversion',
             'rotation-axis',
-            'rotoreflection-axis', 'rotoreflection-plane', 'rotoreflection-angle', 'rotoreflection-count', 'rotoreflection-enabled',
+            'rotoreflection-axis', 'rotoreflection-plane', 'rotoreflection-angle', 'rotoreflection-count', 'rotoreflection-enabled', 'rotoreflection-connect',
+            'translation-axis', 'translation-count', 'translation-step', 'translation-connect',
+            'screw-axis', 'screw-angle', 'screw-distance', 'screw-count', 'screw-enabled', 'screw-connect',
             'face-count',
             'btn-generator', 'generator-modal', 'gen-close', 'gen-start', 'gen-symmetry', 'gen-count', 'gen-minfaces', 'gen-maxedges', 'gen-results', 'gen-status'
         ];
@@ -46,9 +47,7 @@ export class UIManager {
         this._bindClick('import-json-button', 'onImportJSON');
         this._bindClick('export-json-button', 'onExportJSON');
         this._bindClick('export-obj-button', 'onExportOBJ');
-        this._bindClick('export-stl-button', 'onExportSTL');
-
-        this._bindChange('preset-select', 'onPresetChange');
+        this._bindClick('export-png-button', 'onExportPNG');
 
         this._bindInput('grid-density', 'onDensityChange');
 
@@ -78,7 +77,9 @@ export class UIManager {
 
         // Complex Symmetries
         const complexIds = [
-            'rotoreflection-axis', 'rotoreflection-plane', 'rotoreflection-angle', 'rotoreflection-count', 'rotoreflection-enabled'
+            'rotoreflection-axis', 'rotoreflection-plane', 'rotoreflection-angle', 'rotoreflection-count', 'rotoreflection-enabled', 'rotoreflection-connect',
+            'translation-axis', 'translation-count', 'translation-step', 'translation-connect',
+            'screw-axis', 'screw-angle', 'screw-distance', 'screw-count', 'screw-enabled', 'screw-connect'
         ];
         complexIds.forEach(id => {
             this._bindChange(id, 'onSymmetryChange');
@@ -175,21 +176,24 @@ export class UIManager {
             translation: {
                 axis: this._getValue('translation-axis'),
                 count: this._getValue('translation-count'),
-                step: this._getValue('translation-step')
+                step: this._getValue('translation-step'),
+                connect: this._getValue('translation-connect')
             },
             rotoreflection: {
                 enabled: this._getValue('rotoreflection-enabled'),
                 axis: this._getValue('rotoreflection-axis'),
                 plane: this._getValue('rotoreflection-plane'),
-                angle: this._getValue('rotoreflection-angle'),
-                count: this._getValue('rotoreflection-count')
+                angleDeg: this._getValue('rotoreflection-angle'),
+                count: this._getValue('rotoreflection-count'),
+                connect: this._getValue('rotoreflection-connect')
             },
             screw: {
                 enabled: this._getValue('screw-enabled'),
                 axis: this._getValue('screw-axis'),
-                angle: this._getValue('screw-angle'),
+                angleDeg: this._getValue('screw-angle'),
                 distance: this._getValue('screw-distance'),
-                count: this._getValue('screw-count')
+                count: this._getValue('screw-count'),
+                connect: this._getValue('screw-connect')
             }
         };
     }

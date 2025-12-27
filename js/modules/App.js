@@ -107,6 +107,9 @@ export class App {
             onExportJSON: () => this._exportJSON(),
             onExportOBJ: () => this._exportOBJ(),
             onExportSTL: () => this._exportSTL(),
+            onExportPNG: () => this._exportPNG(),
+            onImportJSON: () => this._importJSON(),
+            onRandomForm: () => this._randomForm(),
             onGenerate: (config) => this.generateForms(config),
             onLoadResult: (res) => this.loadGeneratedForm(res)
         });
@@ -406,7 +409,8 @@ export class App {
         // Light Mode -> Black Nodes (0x000000)
         // Dark Mode -> White Nodes (0xffffff)
         if (this.gridMesh) {
-            const color = next === 'dark' ? 0xffffff : 0x000000;
+            const hasTheme = document.documentElement.dataset.theme === 'dark'; // Check actual DOM state
+            const color = hasTheme ? 0xffffff : 0x000000;
             this.gridMesh.material.color.setHex(color);
         }
     }
@@ -503,6 +507,23 @@ export class App {
 
         // Prioritize Picking Cloud
         this.inputManager.setPickableMeshes([this.pickingCloud, this.gridMesh]);
+    }
+
+    _updateNodeColors() {
+        if (!this.gridMesh) return;
+
+        const theme = document.documentElement.dataset.theme || 'light';
+        const baseColor = new THREE.Color(theme === 'dark' ? 0xffffff : 0x000000);
+        const activeColor = new THREE.Color(0xff0000);
+
+        for (let i = 0; i < this.gridPoints.length; i++) {
+            if (i === this.activePointIndex) {
+                this.gridMesh.setColorAt(i, activeColor);
+            } else {
+                this.gridMesh.setColorAt(i, baseColor);
+            }
+        }
+        if (this.gridMesh.instanceColor) this.gridMesh.instanceColor.needsUpdate = true;
     }
 
 
@@ -624,9 +645,15 @@ export class App {
             this.activePointIndex = null;
         } else {
             // Create Segment
-            this._createSegment(this.activePointIndex, pointIndex);
-            // Clear selection after creation (Legacy behavior)
-            this.activePointIndex = null;
+            try {
+                this._createSegment(this.activePointIndex, pointIndex);
+                // Clear selection after creation (Legacy behavior)
+                this.activePointIndex = null;
+            } catch (e) {
+                console.error(e);
+                alert("Error creating segment: " + e.message);
+                this.activePointIndex = null; // Reset anyway
+            }
         }
 
         this._updateNodeColors();
@@ -645,20 +672,6 @@ export class App {
         document.body.style.cursor = 'pointer';
     }
 
-    _updateNodeColors() {
-        if (!this.gridMesh) return;
-        const colorNormal = new THREE.Color(0x000000); // Black for normal
-        const colorSelected = new THREE.Color(0xff0000); // Red for selected
-
-        for (let i = 0; i < this.gridPoints.length; i++) {
-            if (i === this.activePointIndex) {
-                this.gridMesh.setColorAt(i, colorSelected);
-            } else {
-                this.gridMesh.setColorAt(i, colorNormal);
-            }
-        }
-        if (this.gridMesh.instanceColor) this.gridMesh.instanceColor.needsUpdate = true;
-    }
 
     _createSegment(indexA, indexB) {
         const pointA = this.gridPoints[indexA];
@@ -1108,9 +1121,13 @@ export class App {
             }
         }
 
+
         // Handle Faces
+        let faceMat, volumeMat;
+        const identity = [new THREE.Matrix4()];
+
         if (this.showClosedForms) {
-            const faceMat = new THREE.MeshBasicMaterial({
+            faceMat = new THREE.MeshBasicMaterial({
                 color: 0x888888,
                 transparent: true,
                 opacity: 0.4, // More transparent for loose faces
@@ -1118,15 +1135,13 @@ export class App {
                 depthWrite: false
             });
 
-            const volumeMat = new THREE.MeshBasicMaterial({
+            volumeMat = new THREE.MeshBasicMaterial({
                 color: 0x444444, // Darker gray for volumes
                 transparent: true,
                 opacity: 0.4,
                 side: THREE.DoubleSide,
                 depthWrite: false
             });
-
-            const identity = [new THREE.Matrix4()];
 
             this.manualFaces.forEach(face => {
                 const mat = face._isVolume ? volumeMat : faceMat;
@@ -1135,24 +1150,29 @@ export class App {
                 // So we render it ONCE (Identity).
                 // If origin is 'manual' (user created single face), we might want to mirror it?
                 // Actually, if we want consistency: User manual faces usually want symmetry.
-
                 const useTransforms = (face.origin === 'manual');
                 this._renderFace(face, mat, useTransforms ? transforms : identity);
             });
 
-            // Render Auto Faces (baseFaces) - These come from full graph analysis, so they cover the whole object.
-            // Render ONCE.
+            // Render Auto Faces (baseFaces)
             this.baseFaces.forEach(face => {
-                // Check if overridden by manual
                 if (this.manualFaces.has(face.key)) return;
-                this._renderFace(face, faceMat, identity);
+                this._renderFace(face, face._isVolume ? volumeMat : faceMat, identity); // Auto faces already include symmetry if graph built fully? No, graph assumes base symmetry?
+                // Actually, auto-faces are built from the graph. The graph is built from base segments + manual connections?
+                // In current architecture, adjacency graph is just BASE segments.
+                // So auto-faces need transforms too!
+                this._renderFace(face, face._isVolume ? volumeMat : faceMat, transforms);
             });
+        }
 
-            // Render Auto Volumes (baseVolumes) - Same logic, derived from full graph.
+        // --- Generative Connections (Trace) ---
+        this._addGenerativeGeometry(this.symmetryGroup);
+
+
+        // Render Auto Volumes (baseVolumes) - Same logic, derived from full graph.
+        if (this.showClosedForms) {
             this.baseVolumes.forEach(vol => {
                 if (this.manualVolumes.has(vol.key)) return;
-
-                // Render faces of volume
                 vol.faceKeys.forEach(fk => {
                     const fObj = { keys: fk };
                     this._renderFace(fObj, volumeMat, identity);
@@ -1179,6 +1199,176 @@ export class App {
         });
 
         this._updateStatusDisplay(faceCount, volCount);
+    }
+
+
+    _addGenerativeGeometry(group) {
+        const state = this.uiManager.getSymmetryState();
+        if (!state) return;
+
+        // Line Material for Traces
+        const traceLineMat = new THREE.LineBasicMaterial({
+            color: 0x666666,
+            transparent: true,
+            opacity: 0.5
+        });
+
+        // Face Material for Traces (Extruded Volumes)
+        const traceFaceMat = new THREE.MeshBasicMaterial({
+            color: 0xaaaaaa,
+            transparent: true,
+            opacity: 0.2, // Ghostly
+            side: THREE.DoubleSide,
+            depthWrite: false
+        });
+
+        // Helper to extrude base geometry
+        const extrudeStep = (matrixPrev, matrixCurr) => {
+            // 1. Extrude Segments (Lines)
+            this.baseSegments.forEach(seg => {
+                // Connect Start
+                const s1 = seg.start.clone().applyMatrix4(matrixPrev);
+                const s2 = seg.start.clone().applyMatrix4(matrixCurr);
+                // Connect End
+                const e1 = seg.end.clone().applyMatrix4(matrixPrev);
+                const e2 = seg.end.clone().applyMatrix4(matrixCurr);
+
+                const pts = [s1, s2, e1, e2];
+                const geom = new THREE.BufferGeometry().setFromPoints(pts);
+                const lines = new THREE.LineSegments(geom, traceLineMat);
+                group.add(lines);
+            });
+
+            // 2. Extrude Faces (Volumes) - Only if showClosedForms is on
+            if (this.showClosedForms) {
+                const processFace = (face) => {
+                    const indices = face.indices; // Use grid indices for simplicity references
+                    const points = indices.map(idx => this.gridPoints[idx]);
+
+                    // Create Side Quads
+                    for (let i = 0; i < points.length; i++) {
+                        const pA = points[i];
+                        const pB = points[(i + 1) % points.length];
+
+                        const v1 = pA.clone().applyMatrix4(matrixPrev); // Bottom-Left
+                        const v2 = pB.clone().applyMatrix4(matrixPrev); // Bottom-Right
+                        const v3 = pB.clone().applyMatrix4(matrixCurr); // Top-Right
+                        const v4 = pA.clone().applyMatrix4(matrixCurr); // Top-Left
+
+                        // Quad: v1-v2-v3-v4
+                        // Triangulate: v1-v2-v3, v1-v3-v4
+                        const verts = [
+                            v1, v2, v3,
+                            v1, v3, v4
+                        ];
+                        const geom = new THREE.BufferGeometry().setFromPoints(verts);
+                        geom.computeVertexNormals();
+                        const mesh = new THREE.Mesh(geom, traceFaceMat);
+                        group.add(mesh);
+                    }
+                };
+
+                // Extrude Manual Faces
+                this.manualFaces.forEach(face => processFace(face));
+                // Extrude Auto Faces
+                this.baseFaces.forEach(face => {
+                    // Need to map keys back to points. Auto faces have 'keys' property.
+                    if (face.points) { // If pre-resolved
+                        // ... logic
+                    } else if (face.keys) {
+                        const points = face.keys.map(k => this._vectorFromKey(k));
+                        if (points.every(p => p)) {
+                            // Same logic as processFace but with points
+                            for (let i = 0; i < points.length; i++) {
+                                const pA = points[i];
+                                const pB = points[(i + 1) % points.length];
+                                const v1 = pA.clone().applyMatrix4(matrixPrev);
+                                const v2 = pB.clone().applyMatrix4(matrixPrev);
+                                const v3 = pB.clone().applyMatrix4(matrixCurr);
+                                const v4 = pA.clone().applyMatrix4(matrixCurr);
+                                const verts = [v1, v2, v3, v1, v3, v4];
+                                const geom = new THREE.BufferGeometry().setFromPoints(verts);
+                                geom.computeVertexNormals();
+                                const mesh = new THREE.Mesh(geom, traceFaceMat);
+                                group.add(mesh);
+                            }
+                        }
+                    }
+                });
+            }
+        };
+
+
+        // --- Translation Connect ---
+        const t = state.translation;
+        if (t.connect && t.axis !== 'none' && t.count > 0) {
+            const axes = t.axis === 'all' ? ['x', 'y', 'z'] : [t.axis];
+            axes.forEach(ax => {
+                const stepVec = new THREE.Vector3();
+                if (ax === 'x') stepVec.set(t.step, 0, 0);
+                if (ax === 'y') stepVec.set(0, t.step, 0);
+                if (ax === 'z') stepVec.set(0, 0, t.step);
+
+                const mStep = new THREE.Matrix4().makeTranslation(stepVec.x, stepVec.y, stepVec.z);
+                const mStepNeg = new THREE.Matrix4().makeTranslation(-stepVec.x, -stepVec.y, -stepVec.z);
+
+                // Positive Direction
+                let prev = new THREE.Matrix4();
+                for (let i = 1; i <= t.count; i++) {
+                    const curr = prev.clone().multiply(mStep);
+                    extrudeStep(prev, curr);
+                    prev = curr;
+                }
+                // Negative Direction (also visualized in SymmetryEngine)
+                let prevNeg = new THREE.Matrix4();
+                for (let i = 1; i <= t.count; i++) {
+                    const curr = prevNeg.clone().multiply(mStepNeg);
+                    extrudeStep(prevNeg, curr);
+                    prevNeg = curr;
+                }
+            });
+        }
+
+        // --- Screw Connect ---
+        const s = state.screw;
+        if (s.connect && s.enabled && s.axis !== 'none' && s.count > 0) {
+            const mRot = this.symmetry._rotationMatrix(s.axis, THREE.MathUtils.degToRad(s.angleDeg));
+            const mTrans = this.symmetry._translationMatrix(s.axis, s.distance);
+            const mStep = mTrans.clone().multiply(mRot); // Screw Step
+            // Negative Screw
+            const mRotNeg = this.symmetry._rotationMatrix(s.axis, -THREE.MathUtils.degToRad(s.angleDeg));
+            const mTransNeg = this.symmetry._translationMatrix(s.axis, -s.distance);
+            const mStepNeg = mTransNeg.clone().multiply(mRotNeg);
+
+            let prev = new THREE.Matrix4();
+            for (let i = 1; i <= s.count; i++) {
+                const curr = prev.clone().multiply(mStep);
+                extrudeStep(prev, curr);
+                prev = curr;
+            }
+
+            let prevNeg = new THREE.Matrix4();
+            for (let i = 1; i <= s.count; i++) {
+                const curr = prevNeg.clone().multiply(mStepNeg);
+                extrudeStep(prevNeg, curr);
+                prevNeg = curr;
+            }
+        }
+
+        // --- Rotoreflection Connect ---
+        const r = state.rotoreflection;
+        if (r.connect && r.enabled && r.axis !== 'none' && r.count > 0) {
+            const mRot = this.symmetry._rotationMatrix(r.axis, THREE.MathUtils.degToRad(r.angleDeg));
+            const mRef = this.symmetry._reflectionMatrix(r.plane);
+            const mStep = mRef.clone().multiply(mRot);
+
+            let prev = new THREE.Matrix4();
+            for (let i = 1; i <= r.count; i++) {
+                const curr = prev.clone().multiply(mStep);
+                extrudeStep(prev, curr);
+                prev = curr;
+            }
+        }
     }
 
     _renderFace(face, material, transforms) {
@@ -1876,4 +2066,132 @@ export class App {
         URL.revokeObjectURL(url);
     }
 
+    _exportPNG() {
+        const currentSize = new THREE.Vector2();
+        this.sceneManager.renderer.getSize(currentSize);
+        this.sceneManager.renderer.setSize(1024, 1024);
+        this.sceneManager.render();
+        const dataURL = this.sceneManager.renderer.domElement.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.href = dataURL;
+        link.download = 'space_harmony_export.png';
+        link.click();
+        this.sceneManager.renderer.setSize(currentSize.x, currentSize.y);
+        this.sceneManager.render();
+    }
+
+    _randomForm() {
+        this._clearAll();
+        // Enable basic symmetry
+        this.symmetry.settings.reflections.xy = true;
+        this.symmetry.settings.reflections.yz = true;
+        this.symmetry.settings.reflections.zx = true;
+        this._updateSymmetry();
+
+        const count = 12;
+        for (let i = 0; i < count; i++) {
+            const idx1 = Math.floor(Math.random() * this.gridPoints.length);
+            const p1 = this.gridPoints[idx1];
+            // Find nearby
+            const neighbors = [];
+            this.gridPoints.forEach((p, idx2) => {
+                if (idx1 === idx2) return;
+                const d = p.distanceTo(p1);
+                if (Math.abs(d - 1.0) < 0.05 || Math.abs(d - Math.SQRT2) < 0.05) {
+                    neighbors.push(idx2);
+                }
+            });
+            if (neighbors.length > 0) {
+                const idx2 = neighbors[Math.floor(Math.random() * neighbors.length)];
+                const p2 = this.gridPoints[idx2];
+                const segment = {
+                    key: GeometryUtils.segmentKey(p1, p2),
+                    indices: [idx1, idx2],
+                    start: p1,
+                    end: p2,
+                    layer: 0
+                };
+                this.baseSegments.push(segment);
+                this._commitEdge(segment);
+            }
+        }
+        this._updateFaces();
+        this._rebuildSymmetryObjects();
+    }
+
+    _importJSON() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    const data = JSON.parse(ev.target.result);
+                    this._loadJSON(data);
+                } catch (err) {
+                    console.error(err);
+                    alert("Invalid JSON");
+                }
+            };
+            reader.readAsText(file);
+        };
+        input.click();
+    }
+
+    _loadJSON(data) {
+        this._clearAll();
+        if (data.gridDivisions) this._updateGridDensity(data.gridDivisions);
+        if (data.baseSegments) {
+            data.baseSegments.forEach(s => {
+                if (s.start && s.end) {
+                    const idx1 = this._findNearestPointIndex(s.start);
+                    const idx2 = this._findNearestPointIndex(s.end);
+                    if (idx1 !== -1 && idx2 !== -1) {
+                        const segment = {
+                            key: GeometryUtils.segmentKey(this.gridPoints[idx1], this.gridPoints[idx2]),
+                            indices: [idx1, idx2],
+                            start: this.gridPoints[idx1],
+                            end: this.gridPoints[idx2],
+                            layer: 0
+                        };
+                        this.baseSegments.push(segment);
+                        this._commitEdge(segment);
+                    }
+                }
+            });
+        }
+        this._updateFaces();
+        this._rebuildSymmetryObjects();
+    }
+
+    _findNearestPointIndex(vec) {
+        let minDist = 0.001;
+        let idx = -1;
+        const v = new THREE.Vector3(vec.x, vec.y, vec.z);
+        this.gridPoints.forEach((p, i) => {
+            const d = p.distanceTo(v);
+            if (d < minDist) {
+                minDist = d;
+                idx = i;
+            }
+        });
+        return idx;
+    }
+    _startRenderLoop() {
+        this._animate();
+    }
+
+    _animate() {
+        requestAnimationFrame(this._animate.bind(this));
+
+        // Auto-Rotate
+        if (this.sceneManager.controls && this.sceneManager.controls.autoRotate) {
+            this.sceneManager.controls.update();
+        }
+
+        this.sceneManager.render();
+    }
 }
