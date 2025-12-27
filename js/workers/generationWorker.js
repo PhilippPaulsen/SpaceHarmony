@@ -5,7 +5,7 @@
  * Uses the shared FormGeneratorCore logic.
  */
 
-import { generateForm } from '/js/modules/FormGeneratorCore.js';
+import { generateForm } from '../modules/FormGeneratorCore.js';
 
 self.onmessage = function (e) {
     const config = e.data;
