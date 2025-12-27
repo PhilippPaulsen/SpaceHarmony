@@ -13,10 +13,9 @@ export class UIManager {
             'theme-toggle',
             'undo-button', 'redo-button', 'clear-button', 'random-form-button',
             'import-json-button', 'export-json-button', 'export-obj-button', 'export-png-button',
-            'grid-density',
-            'toggle-points', 'toggle-lines', 'toggle-curved-lines', 'toggle-curved-surfaces',
-            'close-face-button', 'close-volume-button', 'auto-close-all-button',
-            'toggle-show-closed', 'toggle-auto-close', 'toggle-color-highlights', 'toggle-auto-rotate',
+            'grid-density', 'toggle-auto-rotate',
+            'toggle-points', 'toggle-lines', 'toggle-show-closed', 'toggle-cube-frame',
+            'toggle-curved-lines', 'toggle-curved-surfaces', 'curve-convexity',
             'reflection-xy', 'reflection-yz', 'reflection-zx', 'toggle-inversion',
             'rotation-axis',
             'rotoreflection-axis', 'rotoreflection-plane', 'rotoreflection-angle', 'rotoreflection-count', 'rotoreflection-enabled', 'rotoreflection-connect',
@@ -54,8 +53,13 @@ export class UIManager {
         // Toggles
         this._bindChange('toggle-points', 'onTogglePoints');
         this._bindChange('toggle-lines', 'onToggleLines');
+        this._bindChange('toggle-show-closed', 'onToggleShowClosed');
+        this._bindChange('toggle-cube-frame', 'onToggleCubeFrame');
+
+        // Curve Row
         this._bindChange('toggle-curved-lines', 'onToggleCurvedLines');
         this._bindChange('toggle-curved-surfaces', 'onToggleCurvedSurfaces');
+        this._bindInput('curve-convexity', 'onCurveConvexityChange');
 
         // Shapes
         this._bindClick('close-face-button', 'onCloseFace');
@@ -65,7 +69,7 @@ export class UIManager {
         this._bindChange('toggle-show-closed', 'onToggleShowClosed');
         this._bindChange('toggle-auto-close', 'onToggleAutoClose');
         this._bindChange('toggle-color-highlights', 'onToggleColorHighlights');
-        this._bindChange('toggle-auto-rotate', 'onToggleAutoRotate');
+        this._bindClick('toggle-auto-rotate', 'onToggleAutoRotate');
 
         // Symmetry
         this._bindChange('reflection-xy', 'onSymmetryChange');

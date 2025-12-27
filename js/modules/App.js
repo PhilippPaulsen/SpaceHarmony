@@ -56,21 +56,17 @@ export class App {
         // Selection
         this.selectionBuffer = []; // Legacy support
         this.selectedPointIndices = new Set();
+        this.showCurvedLines = false;
+        this.showCurvedSurfaces = false;
+        this.convexity = 0.0; // 0=Convex (Midpoints), 1=Concave (Vertices)
+        this.curveTension = 0.0;
+        this.curvedSurfaceCurvature = 0.0;
         this.activePointIndex = null;
 
         // Visibility
         this.showPoints = true;
         this.showLines = true;
-        this.useCurvedLines = false;
-        this.useCurvedSurfaces = false;
-        this.showClosedForms = true;
-        // Visibility
-        this.showPoints = true;
-        this.showLines = true;
-        this.useCurvedLines = false;
-        this.useCurvedSurfaces = false;
-        this.showClosedForms = true;
-        this.autoCloseFaces = true; // Auto-close DEFAULT true as per user request implicit in "Face detection missing"
+        this.selectedPointIndices = new Set(); // Auto-close DEFAULT true as per user request implicit in "Face detection missing"
         this.useRegularHighlight = false;
 
         // Curved Surface Settings
@@ -99,11 +95,18 @@ export class App {
             onTogglePoints: (val) => this._updateVisibility('points', val),
             onToggleLines: (val) => this._updateVisibility('lines', val),
             onToggleCurvedLines: (val) => this._updateVisibility('curvedLines', val),
-            onToggleCurvedSurfaces: (val) => this._updateVisibility('curvedSurfaces', val),
+            onToggleCurvedSurfaces: (v) => { this.useCurvedSurfaces = v; this._rebuildSymmetryObjects(); },
+            onCurveConvexityChange: (val) => {
+                this.convexity = parseFloat(val);
+                this.curveTension = this.convexity * 0.5; // 0.0 -> 0.5
+                this.curvedSurfaceCurvature = this.convexity * 0.6; // 0.0 -> 0.6
+                this._rebuildSymmetryObjects();
+            },
             onToggleShowClosed: (val) => this._updateVisibility('closedForms', val),
+            onToggleCubeFrame: (val) => { if (this.sceneManager.cubeFrame) this.sceneManager.cubeFrame.visible = val; },
             onToggleAutoClose: (val) => { this.autoCloseFaces = val; },
             onToggleColorHighlights: (val) => { this.useRegularHighlight = val; this._rebuildSymmetryObjects(); },
-            onToggleAutoRotate: (val) => this.sceneManager.toggleAutoRotate(val),
+            onToggleAutoRotate: () => this.sceneManager.toggleAutoRotate(),
             onExportJSON: () => this._exportJSON(),
             onExportOBJ: () => this._exportOBJ(),
             onExportSTL: () => this._exportSTL(),
@@ -561,8 +564,16 @@ export class App {
                     this.edges.delete(seg.key);
                 }
             });
+        } else if (action.type === 'replaceSegments') {
+            // Undo Replace: Clear current, Restore previous
+            this.baseSegments = [];
+            this.edges.clear();
+            action.previousSegments.forEach(seg => {
+                this.baseSegments.push(seg);
+                this._commitEdge(seg);
+            });
         }
-        this._updateFaces(); // Re-detect because we might have broken faces
+        this._updateFaces();
         this._rebuildSymmetryObjects();
     }
 
@@ -576,6 +587,14 @@ export class App {
             this._commitEdge(action.segment);
         } else if (action.type === 'addSegments') {
             action.segments.forEach(seg => {
+                this.baseSegments.push(seg);
+                this._commitEdge(seg);
+            });
+        } else if (action.type === 'replaceSegments') {
+            // Redo Replace: Clear current (which was previous), Restore new
+            this.baseSegments = [];
+            this.edges.clear();
+            action.newSegments.forEach(seg => {
                 this.baseSegments.push(seg);
                 this._commitEdge(seg);
             });
@@ -617,7 +636,7 @@ export class App {
     _updateVisibility(what, val) {
         if (what === 'points') this.showPoints = val;
         if (what === 'lines') this.showLines = val;
-        if (what === 'curvedLines') this.useCurvedLines = val;
+        if (what === 'curvedLines') this.showCurvedLines = val;
         if (what === 'curvedSurfaces') this.useCurvedSurfaces = val;
         if (what === 'closedForms') this.showClosedForms = val;
 
@@ -1065,7 +1084,7 @@ export class App {
         if (this.showLines) {
             const lineMat = new THREE.LineBasicMaterial({ color: 0x000000 }); // Theme sensitive?
 
-            if (this.useCurvedLines) {
+            if (this.showCurvedLines) {
                 // Curve Logic
                 const paths = this._tracePaths(this.baseSegments);
 
@@ -1085,11 +1104,7 @@ export class App {
                         });
                     } else {
                         // Curve
-                        const curve = new THREE.CatmullRomCurve3(points);
-                        // centripetal fits better for geometric shapes usually
-                        curve.curveType = 'centripetal';
-                        const divisions = (points.length - 1) * 10;
-                        const curvePoints = curve.getPoints(divisions);
+                        const curvePoints = this._getCurvePoints(points);
                         const geom = new THREE.BufferGeometry().setFromPoints(curvePoints);
 
                         transforms.forEach(matrix => {
@@ -1941,15 +1956,16 @@ export class App {
         let output = "# SpaceHarmony OBJ Export\n";
 
         // We need to export the VISIBLE geometry (including symmetries).
-        // This means we need to apply transforms to all points/segments.
+        const transforms = this.symmetry.getTransforms();
 
         // 1. Gather all unique vertices from the visualized form
         const vertices = [];
         // Map "x,y,z" -> specific 1-based index in OBJ
         const vMap = new Map();
 
-        const addVertex = (v) => {
-            const key = GeometryUtils.pointKey(v);
+        const addUniqueVertex = (v) => {
+            // Precision for key to avoid micro-gaps
+            const key = `${v.x.toFixed(6)}_${v.y.toFixed(6)}_${v.z.toFixed(6)}`;
             if (!vMap.has(key)) {
                 vMap.set(key, vertices.length + 1);
                 vertices.push(v);
@@ -1958,46 +1974,69 @@ export class App {
             return vMap.get(key);
         };
 
-        // Get transforms
-        const transforms = this.symmetry.getTransforms();
+        const finalLines = [];
 
-        // Collect Vertices & Lines from Segments
-        const objLines = [];
-        this.baseSegments.forEach(seg => {
-            transforms.forEach(mat => {
-                const s = seg.start.clone().applyMatrix4(mat);
-                const e = seg.end.clone().applyMatrix4(mat);
-                const i1 = addVertex(s);
-                const i2 = addVertex(e);
-                if (i1 !== i2) {
-                    objLines.push([i1, i2]);
-                }
+        // 2. Generate Lines (Straight or Curved)
+        if (this.showCurvedLines) {
+            // _tracePaths expects segment objects with .indices
+            const paths = this._tracePaths(this.baseSegments);
+            paths.forEach(pathIndices => {
+                // pathIndices is [i1, i2, i3...]
+                const points = pathIndices.map(i => this.gridPoints[i]);
+                const curvePoints = this._getCurvePoints(points);
+
+                transforms.forEach(mat => {
+                    const transformedPoints = curvePoints.map(p => p.clone().applyMatrix4(mat));
+                    const indices = transformedPoints.map(p => addUniqueVertex(p));
+
+                    // OBJ uses 'l v1 v2 v3 ...' for polylines
+                    if (indices.length > 1) {
+                        finalLines.push(`l ${indices.join(' ')}`);
+                    }
+                });
             });
-        });
+        } else {
+            this.baseSegments.forEach(seg => {
+                transforms.forEach(mat => {
+                    const p1 = seg.start.clone().applyMatrix4(mat);
+                    const p2 = seg.end.clone().applyMatrix4(mat);
+                    const i1 = addUniqueVertex(p1);
+                    const i2 = addUniqueVertex(p2);
+                    if (i1 !== i2) {
+                        finalLines.push(`l ${i1} ${i2}`);
+                    }
+                });
+            });
+        }
 
-        // Collect Faces
+        // 3. Collect Faces
         const objFaces = [];
         this.manualFaces.forEach(face => {
+            const indices = face.indices;
+            // We need vertex positions for face
+            const facePoints = indices.map(idx => this.gridPoints[idx]);
+
             transforms.forEach(mat => {
                 const polyIndices = [];
-                face.indices.forEach(idx => {
-                    const p = this.gridPoints[idx].clone().applyMatrix4(mat);
-                    polyIndices.push(addVertex(p));
+                facePoints.forEach(pt => {
+                    const p = pt.clone().applyMatrix4(mat);
+                    polyIndices.push(addUniqueVertex(p));
                 });
+
                 if (polyIndices.length >= 3) {
                     objFaces.push(polyIndices);
                 }
             });
         });
 
-        // Write Vertices
+        // 4. Write Output
         vertices.forEach(v => {
             output += `v ${v.x.toFixed(6)} ${v.y.toFixed(6)} ${v.z.toFixed(6)}\n`;
         });
 
         output += `\ng lines\n`;
-        objLines.forEach(l => {
-            output += `l ${l[0]} ${l[1]}\n`;
+        finalLines.forEach(lineStr => {
+            output += `${lineStr}\n`;
         });
 
         output += `\ng faces\n`;
@@ -2081,7 +2120,22 @@ export class App {
     }
 
     _randomForm() {
-        this._clearAll();
+        // Backup current state
+        const previousSegments = [...this.baseSegments];
+
+        // Clear geometry (but NOT history)
+        this.baseSegments = [];
+        this.baseFaces = [];
+        this.baseVolumes = [];
+        this.edges.clear();
+        this.vertices.clear();
+        this.manualFaces.clear();
+        this.manualVolumes.clear();
+        this.selectionBuffer = [];
+        this.selectedPointIndices.clear();
+        this.activePointIndex = null;
+        this.future = []; // Clear redo stack on new action
+
         // Enable basic symmetry
         this.symmetry.settings.reflections.xy = true;
         this.symmetry.settings.reflections.yz = true;
@@ -2089,6 +2143,8 @@ export class App {
         this._updateSymmetry();
 
         const count = 12;
+        const newSegments = [];
+
         for (let i = 0; i < count; i++) {
             const idx1 = Math.floor(Math.random() * this.gridPoints.length);
             const p1 = this.gridPoints[idx1];
@@ -2113,8 +2169,17 @@ export class App {
                 };
                 this.baseSegments.push(segment);
                 this._commitEdge(segment);
+                newSegments.push(segment);
             }
         }
+
+        // Push History
+        this._pushHistory({
+            type: 'replaceSegments',
+            previousSegments: previousSegments,
+            newSegments: newSegments
+        });
+
         this._updateFaces();
         this._rebuildSymmetryObjects();
     }
@@ -2180,6 +2245,112 @@ export class App {
         });
         return idx;
     }
+    _getCurvePoints(points) {
+        if (points.length < 2) return [];
+        if (points.length === 2) return points;
+
+        let targetPoints = [];
+        const isClosed = points[0].distanceTo(points[points.length - 1]) < 0.001;
+
+        // Calculate Midpoints (Convex Target)
+        // Midpoint i corresponds to Edge i (P_i -> P_i+1)
+        // We match P_i to M_i?
+        // If val=0 (Convex), we want M_i. If val=1 (Concave), we want P_i.
+
+        let convexPoints = []; // Midpoints
+
+        if (isClosed) {
+            for (let i = 0; i < points.length - 1; i++) {
+                convexPoints.push(
+                    new THREE.Vector3().addVectors(points[i], points[i + 1]).multiplyScalar(0.5)
+                );
+            }
+            convexPoints.push(convexPoints[0]); // Close loop
+        } else {
+            // Open: Keep ends?
+            // If we interpolate endpoints, midpoint of Start? Start has no "previous".
+            // We fix endpoints.
+            convexPoints.push(points[0]);
+            for (let i = 0; i < points.length - 1; i++) {
+                convexPoints.push(
+                    new THREE.Vector3().addVectors(points[i], points[i + 1]).multiplyScalar(0.5)
+                );
+            }
+            convexPoints.push(points[points.length - 1]);
+        }
+
+        // Interpolate
+        // convexPoints might have different length map in open case?
+        // Open case: points len N, convex len N+1?
+        // Open: P0 .. PN-1. (N points)
+        // Midpoints: M0..MN-2. (N-1 edges).
+        // My Logic: P0, M0..MN-2, PN-1. (N+1 points).
+        // Vertices: P0, P1..PN-2, PN-1. (N points).
+        // We need same count to Lerp.
+        // If Concave(1), we just return points.
+        // If Convex(0), we return "P0, M..."
+        // Smooth morph requires consistent topology.
+        // Use CatmullRom on DIFFERENT sets of points?
+        // No, must lerp points BEFORE curve gen for stability?
+        // Actually, if I just Lerp the points I HAVE.
+        // If Open:
+        // P0 (Fixed).
+        // P1 -> M0 ? (Shifted left) or M1 (Shifted right)?
+        // P1 is between M0 and M1.
+
+        // Simpler approach for slider:
+        // Lerp position P_i towards `(P_prev + P_next)/2` (Laplacian smoothing).
+        // This is robust and preserves count.
+        // Val 0 (Convex/Smooth) -> Fully smooothed (Average).
+        // Val 1 (Concave/Sharp) -> Original P_i.
+
+        // Loop handling:
+        for (let i = 0; i < points.length; i++) {
+            const P = points[i];
+            let smoothed;
+
+            if (isClosed) {
+                // Wrap indices
+                // i=0, prev=N-2 (since N-1 is duplicate of 0).
+                // Actually points includes duplicate start/end.
+                // Unique points are 0..N-2.
+                // P_0 == P_last.
+
+                let prevIdx, nextIdx;
+                if (i === 0) { prevIdx = points.length - 2; nextIdx = 1; }
+                else if (i === points.length - 1) { prevIdx = points.length - 2; nextIdx = 1; } // Should match 0 result
+                else { prevIdx = i - 1; nextIdx = i + 1; }
+
+                const Prev = points[prevIdx];
+                const Next = points[nextIdx];
+                smoothed = new THREE.Vector3().addVectors(Prev, Next).multiplyScalar(0.5);
+            } else {
+                // Open
+                if (i === 0 || i === points.length - 1) {
+                    smoothed = P.clone(); // Fix endpoints
+                } else {
+                    smoothed = new THREE.Vector3().addVectors(points[i - 1], points[i + 1]).multiplyScalar(0.5);
+                }
+            }
+
+            // Lerp
+            const result = new THREE.Vector3().copy(smoothed).lerp(P, this.convexity);
+            targetPoints.push(result);
+        }
+
+        const curve = new THREE.CatmullRomCurve3(targetPoints);
+        curve.curveType = 'catmullrom';
+        // Tension: 0.0 (Convex/Smooth) -> 0.5 (Concave/Sharp)
+        curve.tension = (this.curveTension !== undefined) ? this.curveTension : 0.5;
+
+        // Note: Laplacian smoothing shrinks the shape (Convex Hull property).
+        // The user's "Midpoint" strategy also shrank the shape (Chaikin).
+        // This should be visually similar and supports continuous slider.
+
+        const divisions = (points.length - 1) * 12;
+        return curve.getPoints(divisions);
+    }
+
     _startRenderLoop() {
         this._animate();
     }

@@ -571,3 +571,7 @@ output {
   overflow-y: auto;
   margin-top: 12px;
 }
+/* Point Density Spacing */
+.control-row:has(#grid-density) {
+  margin-top: 12px;
+}

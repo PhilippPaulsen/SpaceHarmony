@@ -140,7 +140,7 @@ export class SceneManager {
 
     toggleAutoRotate(enabled) {
         if (this.controls) {
-            this.controls.autoRotate = enabled;
+            this.controls.autoRotate = (enabled !== undefined) ? enabled : !this.controls.autoRotate;
         }
     }
 }
