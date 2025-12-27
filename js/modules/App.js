@@ -83,17 +83,18 @@ export class App {
         });
 
         // Material Cache for Performance & Theme Support
+        // Material Cache for Performance & Theme Support
         this.materials = {
             line: new THREE.LineBasicMaterial({ color: 0x000000 }),
             face: new THREE.MeshPhongMaterial({
                 color: 0xbbbbbb,
-                transparent: true, opacity: 0.15,
-                side: THREE.DoubleSide, depthWrite: false, flatShading: false, shininess: 30, specular: 0x222222
+                transparent: true, opacity: 0.25,
+                side: THREE.DoubleSide, depthWrite: false, flatShading: true, shininess: 40, specular: 0x444444
             }),
             volume: new THREE.MeshPhongMaterial({
                 color: 0x888888,
-                transparent: true, opacity: 0.25,
-                side: THREE.DoubleSide, depthWrite: false, flatShading: false, shininess: 30, specular: 0x222222
+                transparent: true, opacity: 0.40,
+                side: THREE.DoubleSide, depthWrite: false, flatShading: true, shininess: 60, specular: 0x666666
             }),
             traceLine: new THREE.LineBasicMaterial({
                 color: 0x666666, transparent: true, opacity: 0.5

@@ -73,16 +73,24 @@ export class SceneManager {
     }
 
     _setupLighting() {
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        // 1. Ambient Light (Softer base to allow shadows)
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
         this.scene.add(ambientLight);
 
-        const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
-        dirLight.position.set(3, 4, 3);
-        this.scene.add(dirLight);
+        // 2. Key Light (Main Source - Top Right Front)
+        const keyLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        keyLight.position.set(5, 8, 5);
+        this.scene.add(keyLight);
 
-        const backLight = new THREE.DirectionalLight(0xffffff, 0.3);
-        backLight.position.set(-2, -3, -2);
-        this.scene.add(backLight);
+        // 3. Fill Light (Soften shadows - Left)
+        const fillLight = new THREE.DirectionalLight(0xffffff, 0.5); // Neutral White
+        fillLight.position.set(-5, 3, 5);
+        this.scene.add(fillLight);
+
+        // 4. Rim Light (Backlight for edge definition)
+        const rimLight = new THREE.DirectionalLight(0xffffff, 0.6); // Neutral White, slightly reduced intensity
+        rimLight.position.set(0, 5, -5);
+        this.scene.add(rimLight);
     }
 
     _addCubeFrame() {
