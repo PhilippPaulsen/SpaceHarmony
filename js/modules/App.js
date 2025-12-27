@@ -148,6 +148,25 @@ export class App {
     }
 
 
+    _disposeNode(node) {
+        if (!node) return;
+
+        node.traverse((child) => {
+            if (child.isMesh || child.isLine || child.isPoints) {
+                if (child.geometry) {
+                    child.geometry.dispose();
+                }
+                if (child.material) {
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(m => m.dispose());
+                    } else {
+                        child.material.dispose();
+                    }
+                }
+            }
+        });
+    }
+
     _initWorker() {
         this.worker = new Worker('js/workers/generationWorker.js', { type: 'module' });
         this.worker.onerror = (e) => {
@@ -242,47 +261,52 @@ export class App {
             this._rebuildVisuals();
         }
 
-        // 2. Reconstruct Lines
+        // 2. Reconstruct Lines (Batch for Performance)
         if (formData.lines) {
+            const newSegments = [];
             formData.lines.forEach(l => {
                 const iA = genToAppIndex.get(l.a);
                 const iB = genToAppIndex.get(l.b);
                 if (iA !== undefined && iB !== undefined && iA !== iB) {
-                    this._createSegment(iA, iB);
+                    const pA = this.gridPoints[iA];
+                    const pB = this.gridPoints[iB];
+                    // Create Segment Object manually to avoid overhead of _createSegment checks
+                    newSegments.push({
+                        start: pA.clone(),
+                        end: pB.clone(),
+                        key: GeometryUtils.segmentKey(pA, pB),
+                        indices: [iA, iB],
+                        origin: 'generated'
+                    });
                 }
             });
+            // Commit all at once (triggers ONE update)
+            if (newSegments.length > 0) {
+                this._commitSegments(newSegments);
+            }
         }
 
-        // 3. Load Faces with Geometric Deduplication
+        // 3. Load Faces with Key Standardization
         if (formData.faces) {
-            const uniqueGeomKeys = new Set();
-
             formData.faces.forEach(faceIndices => {
                 const appIndices = faceIndices.map(idx => genToAppIndex.get(idx)).filter(i => i !== undefined);
 
                 if (appIndices.length >= 3) {
-                    // Geometric Dedup: Calculate Centroid + Normal
-                    const points = appIndices.map(i => this.gridPoints[i]);
-                    const center = new THREE.Vector3();
-                    points.forEach(p => center.add(p));
-                    center.divideScalar(points.length);
+                    // Get Point Keys for Canonical Face Key
+                    const pointKeys = appIndices.map(idx => this.pointKeyLookup.get(idx));
+                    if (pointKeys.some(k => !k)) return; // Should not happen
 
-                    // Simple Normal (first 3 points)
-                    const v1 = new THREE.Vector3().subVectors(points[1], points[0]);
-                    const v2 = new THREE.Vector3().subVectors(points[2], points[0]);
-                    const norm = new THREE.Vector3().crossVectors(v1, v2).normalize();
+                    // Generate Coordinate-based Key
+                    const faceKey = GeometryUtils.faceKeyFromKeys(pointKeys);
 
-                    // Key: Center + Abs(Normal) (to ignore flipping)
-                    const k = `${center.x.toFixed(3)}_${center.y.toFixed(3)}_${center.z.toFixed(3)}__${Math.abs(norm.x).toFixed(3)}_${Math.abs(norm.y).toFixed(3)}_${Math.abs(norm.z).toFixed(3)}`;
-
-                    if (!uniqueGeomKeys.has(k)) {
-                        uniqueGeomKeys.add(k);
-
-                        // Valid unique face
-                        const sortKey = appIndices.slice().sort().join('_');
-                        if (!this.manualFaces.has(sortKey)) {
-                            this.manualFaces.set(sortKey, { indices: appIndices, origin: 'generated' });
-                        }
+                    // valid unique face
+                    if (!this.manualFaces.has(faceKey)) {
+                        this.manualFaces.set(faceKey, {
+                            indices: appIndices,
+                            keys: pointKeys, // Store keys for consistency
+                            key: faceKey,
+                            origin: 'generated'
+                        });
                     }
                 }
             });
@@ -464,6 +488,10 @@ export class App {
     }
 
     _rebuildVisuals() {
+        // Dispose previous
+        if (this.gridMesh) this._disposeNode(this.gridMesh);
+        if (this.pickingCloud) this._disposeNode(this.pickingCloud);
+
         const geom = new THREE.SphereGeometry(0.01, 8, 8);
         const theme = document.documentElement.dataset.theme || 'light';
         const color = theme === 'dark' ? 0xffffff : 0x000000;
@@ -1051,18 +1079,26 @@ export class App {
 
 
     _rebuildSymmetryObjects() {
-        // 1. Remove old symmetry group
+        // 1. Dispose old
         if (this.symmetryGroup) {
+            this._disposeNode(this.symmetryGroup);
             this.sceneManager.scene.remove(this.symmetryGroup);
         }
 
         this.symmetryGroup = new THREE.Group();
 
-        // 2. Generate Copies
-        // Transform segments
+        // 2. Batches (Simple Arrays of coordinates [x,y,z, x,y,z...])
+        const batches = {
+            lines: [],
+            faces: [],
+            volumes: [],
+            traceLines: [],
+            traceFaces: []
+        };
+
         const transforms = this.symmetry.getTransforms();
 
-        // Render Symmetric Active Points
+        // 3. Render Symmetric Active Points (InstancedMesh is efficient, keep it)
         if (this.activePointIndex !== null && this.gridPoints[this.activePointIndex]) {
             const activeP = this.gridPoints[this.activePointIndex];
             const activeGeom = new THREE.SphereGeometry(0.015, 8, 8);
@@ -1081,167 +1117,137 @@ export class App {
             this.symmetryGroup.add(mesh);
         }
 
+        // 4. Lines (Segments)
         if (this.showLines) {
-            const lineMat = new THREE.LineBasicMaterial({ color: 0x000000 }); // Theme sensitive?
-
             if (this.showCurvedLines) {
                 // Curve Logic
                 const paths = this._tracePaths(this.baseSegments);
-
                 paths.forEach(pathIndices => {
                     const points = pathIndices.map(i => this.gridPoints[i]);
-                    // Need at least 2 points
                     if (points.length < 2) return;
 
-                    // If simple segment (2 points), it's just a line
-                    if (points.length === 2) {
-                        transforms.forEach(matrix => {
-                            const p0 = points[0].clone().applyMatrix4(matrix);
-                            const p1 = points[1].clone().applyMatrix4(matrix);
-                            const geom = new THREE.BufferGeometry().setFromPoints([p0, p1]);
-                            const line = new THREE.LineSegments(geom, lineMat);
-                            this.symmetryGroup.add(line);
-                        });
-                    } else {
-                        // Curve
-                        const curvePoints = this._getCurvePoints(points);
-                        const geom = new THREE.BufferGeometry().setFromPoints(curvePoints);
+                    const curvePointsSource = (points.length === 2) ? points : this._getCurvePoints(points);
 
-                        transforms.forEach(matrix => {
-                            const cGeom = geom.clone();
-                            cGeom.applyMatrix4(matrix);
-                            const line = new THREE.Line(cGeom, lineMat);
-                            this.symmetryGroup.add(line);
-                        });
-                    }
-                });
-
-            } else {
-                // Standard Straight Lines
-                const points = [];
-
-                this.baseSegments.forEach(seg => {
+                    // Add segments for each transform
                     transforms.forEach(matrix => {
-                        const start = seg.start.clone().applyMatrix4(matrix);
-                        const end = seg.end.clone().applyMatrix4(matrix);
-                        points.push(start, end);
+                        // Transform all points of the curve
+                        const transformed = curvePointsSource.map(p => p.clone().applyMatrix4(matrix));
+                        for (let i = 0; i < transformed.length - 1; i++) {
+                            batches.lines.push(
+                                transformed[i].x, transformed[i].y, transformed[i].z,
+                                transformed[i + 1].x, transformed[i + 1].y, transformed[i + 1].z
+                            );
+                        }
                     });
                 });
-
-                if (points.length > 0) {
-                    const geom = new THREE.BufferGeometry().setFromPoints(points);
-                    const lines = new THREE.LineSegments(geom, lineMat);
-                    this.symmetryGroup.add(lines);
-                }
+            } else {
+                // Straight Lines
+                this.baseSegments.forEach(seg => {
+                    transforms.forEach(matrix => {
+                        const s = seg.start.clone().applyMatrix4(matrix);
+                        const e = seg.end.clone().applyMatrix4(matrix);
+                        batches.lines.push(s.x, s.y, s.z, e.x, e.y, e.z);
+                    });
+                });
             }
         }
 
-
-        // Handle Faces
-        let faceMat, volumeMat;
+        // 5. Faces and Volumes
+        // Helper Identity
         const identity = [new THREE.Matrix4()];
 
         if (this.showClosedForms) {
-            faceMat = new THREE.MeshPhongMaterial({
-                color: 0xbbbbbb, // Slightly darker to allow highlights
-                transparent: true,
-                opacity: 0.15, // Very transparent
-                side: THREE.DoubleSide,
-                depthWrite: false, // Prevents z-fighting but order dependent
-                flatShading: false, // Smooth shading for curves
-                shininess: 30,
-                specular: 0x222222
-            });
-
-            volumeMat = new THREE.MeshPhongMaterial({
-                color: 0x888888, // Darker for volumes
-                transparent: true,
-                opacity: 0.25,
-                side: THREE.DoubleSide,
-                depthWrite: false,
-                flatShading: false,
-                shininess: 30,
-                specular: 0x222222
-            });
-
+            // Manual Faces
             this.manualFaces.forEach(face => {
-                const mat = face._isVolume ? volumeMat : faceMat;
-
-                // If origin is 'auto' or 'generated', it comes from the full graph/loader which already accounts for symmetry
-                // So we render it ONCE (Identity).
-                // If origin is 'manual' (user created single face), we might want to mirror it?
-                // Actually, if we want consistency: User manual faces usually want symmetry.
-                const useTransforms = (face.origin === 'manual');
-                this._renderFace(face, mat, useTransforms ? transforms : identity);
+                const target = face._isVolume ? batches.volumes : batches.faces;
+                // Manual faces follow symmetry if origin is manual
+                const useTransforms = (face.origin === 'manual') ? transforms : identity;
+                this._collectFaceVertices(face, useTransforms, target);
             });
 
-            // Render Auto Faces (baseFaces)
+            // Auto Faces
             this.baseFaces.forEach(face => {
                 if (this.manualFaces.has(face.key)) return;
-                this._renderFace(face, face._isVolume ? volumeMat : faceMat, identity); // Auto faces already include symmetry if graph built fully? No, graph assumes base symmetry?
-                // Actually, auto-faces are built from the graph. The graph is built from base segments + manual connections?
-                // In current architecture, adjacency graph is just BASE segments.
-                // So auto-faces need transforms too!
-                this._renderFace(face, face._isVolume ? volumeMat : faceMat, transforms);
+                const target = face._isVolume ? batches.volumes : batches.faces;
+                // Auto faces (planar detection) needs full transforms to show all symmetric counterparts
+                this._collectFaceVertices(face, transforms, target);
             });
-        }
 
-        // --- Generative Connections (Trace) ---
-        this._addGenerativeGeometry(this.symmetryGroup);
-
-
-        // Render Auto Volumes (baseVolumes) - Same logic, derived from full graph.
-        if (this.showClosedForms) {
+            // Auto Volumes
             this.baseVolumes.forEach(vol => {
                 if (this.manualVolumes.has(vol.key)) return;
                 vol.faceKeys.forEach(fk => {
                     const fObj = { keys: fk };
-                    this._renderFace(fObj, volumeMat, identity);
+                    this._collectFaceVertices(fObj, identity, batches.volumes);
                 });
             });
         }
 
+        // 6. Generative Geometry
+        this._collectGenerativeGeometry(batches, transforms);
+
+        // 7. Construct Unified Meshes
+        // Materials
+        const lineMat = new THREE.LineBasicMaterial({ color: 0x000000 });
+
+        const faceMat = new THREE.MeshPhongMaterial({
+            color: 0xbbbbbb,
+            transparent: true,
+            opacity: 0.15,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            flatShading: false,
+            shininess: 30,
+            specular: 0x222222
+        });
+
+        const volumeMat = new THREE.MeshPhongMaterial({
+            color: 0x888888,
+            transparent: true,
+            opacity: 0.25,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            flatShading: false,
+            shininess: 30,
+            specular: 0x222222
+        });
+
+        const traceLineMat = new THREE.LineBasicMaterial({ color: 0x666666, transparent: true, opacity: 0.5 });
+        const traceFaceMat = new THREE.MeshBasicMaterial({ color: 0xaaaaaa, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false });
+
+        const createBatchMesh = (arr, mat, isLine) => {
+            if (arr.length === 0) return;
+            const geom = new THREE.BufferGeometry();
+            geom.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3));
+            if (!isLine) geom.computeVertexNormals();
+
+            const mesh = isLine ? new THREE.LineSegments(geom, mat) : new THREE.Mesh(geom, mat);
+            this.symmetryGroup.add(mesh);
+        };
+
+        createBatchMesh(batches.lines, lineMat, true);
+        createBatchMesh(batches.faces, faceMat, false);
+        createBatchMesh(batches.volumes, volumeMat, false);
+        createBatchMesh(batches.traceLines, traceLineMat, true);
+        createBatchMesh(batches.traceFaces, traceFaceMat, false);
+
         this.sceneManager.scene.add(this.symmetryGroup);
 
-        // Update counts logic
-        // If we render with identity, count is 1. If transforms, count is N.
+        // Update Counts
         let faceCount = 0;
         this.manualFaces.forEach(f => { faceCount += (f.origin === 'manual' ? transforms.length : 1); });
-
-        // baseFaces are Identity
-        this.baseFaces.forEach(f => {
-            if (!this.manualFaces.has(f.key)) faceCount += 1;
-        });
+        this.baseFaces.forEach(f => { if (!this.manualFaces.has(f.key)) faceCount += transforms.length; }); // Approx
 
         let volCount = 0;
-        // baseVolumes are Identity
-        this.baseVolumes.forEach(v => {
-            if (!this.manualVolumes.has(v.key)) volCount += 1;
-        });
+        this.baseVolumes.forEach(v => { if (!this.manualVolumes.has(v.key)) volCount += 1; });
 
         this._updateStatusDisplay(faceCount, volCount);
     }
 
 
-    _addGenerativeGeometry(group) {
+    _collectGenerativeGeometry(batches, transforms) {
         const state = this.uiManager.getSymmetryState();
         if (!state) return;
-
-        // Line Material for Traces
-        const traceLineMat = new THREE.LineBasicMaterial({
-            color: 0x666666,
-            transparent: true,
-            opacity: 0.5
-        });
-
-        // Face Material for Traces (Extruded Volumes)
-        const traceFaceMat = new THREE.MeshBasicMaterial({
-            color: 0xaaaaaa,
-            transparent: true,
-            opacity: 0.2, // Ghostly
-            side: THREE.DoubleSide,
-            depthWrite: false
-        });
 
         // Helper to extrude base geometry
         const extrudeStep = (matrixPrev, matrixCurr) => {
@@ -1254,19 +1260,22 @@ export class App {
                 const e1 = seg.end.clone().applyMatrix4(matrixPrev);
                 const e2 = seg.end.clone().applyMatrix4(matrixCurr);
 
-                const pts = [s1, s2, e1, e2];
-                const geom = new THREE.BufferGeometry().setFromPoints(pts);
-                const lines = new THREE.LineSegments(geom, traceLineMat);
-                group.add(lines);
+                batches.traceLines.push(s1.x, s1.y, s1.z, s2.x, s2.y, s2.z);
+                batches.traceLines.push(e1.x, e1.y, e1.z, e2.x, e2.y, e2.z);
             });
 
             // 2. Extrude Faces (Volumes) - Only if showClosedForms is on
             if (this.showClosedForms) {
                 const processFace = (face) => {
-                    const indices = face.indices; // Use grid indices for simplicity references
-                    const points = indices.map(idx => this.gridPoints[idx]);
+                    let points = [];
+                    if (face.keys) {
+                        points = face.keys.map(k => this.pointLookup.get(k)).filter(p => p);
+                    } else if (face.indices) {
+                        points = face.indices.map(i => this.gridPoints[i]).filter(p => p);
+                    }
+                    if (points.length < 3) return;
 
-                    // Create Side Quads
+                    // Create Side Quads -> Triangles
                     for (let i = 0; i < points.length; i++) {
                         const pA = points[i];
                         const pB = points[(i + 1) % points.length];
@@ -1277,15 +1286,10 @@ export class App {
                         const v4 = pA.clone().applyMatrix4(matrixCurr); // Top-Left
 
                         // Quad: v1-v2-v3-v4
-                        // Triangulate: v1-v2-v3, v1-v3-v4
-                        const verts = [
-                            v1, v2, v3,
-                            v1, v3, v4
-                        ];
-                        const geom = new THREE.BufferGeometry().setFromPoints(verts);
-                        geom.computeVertexNormals();
-                        const mesh = new THREE.Mesh(geom, traceFaceMat);
-                        group.add(mesh);
+                        // Tri 1: v1-v2-v3
+                        batches.traceFaces.push(v1.x, v1.y, v1.z, v2.x, v2.y, v2.z, v3.x, v3.y, v3.z);
+                        // Tri 2: v1-v3-v4
+                        batches.traceFaces.push(v1.x, v1.y, v1.z, v3.x, v3.y, v3.z, v4.x, v4.y, v4.z);
                     }
                 };
 
@@ -1293,28 +1297,8 @@ export class App {
                 this.manualFaces.forEach(face => processFace(face));
                 // Extrude Auto Faces
                 this.baseFaces.forEach(face => {
-                    // Need to map keys back to points. Auto faces have 'keys' property.
-                    if (face.points) { // If pre-resolved
-                        // ... logic
-                    } else if (face.keys) {
-                        const points = face.keys.map(k => this._vectorFromKey(k));
-                        if (points.every(p => p)) {
-                            // Same logic as processFace but with points
-                            for (let i = 0; i < points.length; i++) {
-                                const pA = points[i];
-                                const pB = points[(i + 1) % points.length];
-                                const v1 = pA.clone().applyMatrix4(matrixPrev);
-                                const v2 = pB.clone().applyMatrix4(matrixPrev);
-                                const v3 = pB.clone().applyMatrix4(matrixCurr);
-                                const v4 = pA.clone().applyMatrix4(matrixCurr);
-                                const verts = [v1, v2, v3, v1, v3, v4];
-                                const geom = new THREE.BufferGeometry().setFromPoints(verts);
-                                geom.computeVertexNormals();
-                                const mesh = new THREE.Mesh(geom, traceFaceMat);
-                                group.add(mesh);
-                            }
-                        }
-                    }
+                    if (this.manualFaces.has(face.key)) return;
+                    processFace(face);
                 });
             }
         };
@@ -1340,7 +1324,7 @@ export class App {
                     extrudeStep(prev, curr);
                     prev = curr;
                 }
-                // Negative Direction (also visualized in SymmetryEngine)
+                // Negative Direction
                 let prevNeg = new THREE.Matrix4();
                 for (let i = 1; i <= t.count; i++) {
                     const curr = prevNeg.clone().multiply(mStepNeg);
@@ -1355,8 +1339,8 @@ export class App {
         if (s.connect && s.enabled && s.axis !== 'none' && s.count > 0) {
             const mRot = this.symmetry._rotationMatrix(s.axis, THREE.MathUtils.degToRad(s.angleDeg));
             const mTrans = this.symmetry._translationMatrix(s.axis, s.distance);
-            const mStep = mTrans.clone().multiply(mRot); // Screw Step
-            // Negative Screw
+            const mStep = mTrans.clone().multiply(mRot);
+
             const mRotNeg = this.symmetry._rotationMatrix(s.axis, -THREE.MathUtils.degToRad(s.angleDeg));
             const mTransNeg = this.symmetry._translationMatrix(s.axis, -s.distance);
             const mStepNeg = mTransNeg.clone().multiply(mRotNeg);
@@ -1392,7 +1376,7 @@ export class App {
         }
     }
 
-    _renderFace(face, material, transforms) {
+    _collectFaceVertices(face, transforms, targetArray) {
         let points = [];
 
         if (face.keys) {
@@ -1403,34 +1387,42 @@ export class App {
 
         if (points.length < 3) return;
 
-        let geometry = null;
-
+        // Curved Surface Logic (Only for Triangles currently supported by helper)
         if (points.length === 3 && this.useCurvedSurfaces) {
-            geometry = this._buildCurvedTriangleGeometry(points, { curvatureScale: 1.1 });
-        }
-
-        if (!geometry && points.length >= 3) {
-            const vertices = [];
-            const p0 = points[0];
-            for (let i = 1; i < points.length - 1; i++) {
-                vertices.push(p0.x, p0.y, p0.z);
-                vertices.push(points[i].x, points[i].y, points[i].z);
-                vertices.push(points[i + 1].x, points[i + 1].y, points[i + 1].z);
+            const tempGeom = this._buildCurvedTriangleGeometry(points, { curvatureScale: 1.1 });
+            if (tempGeom) {
+                const pos = tempGeom.attributes.position.array;
+                transforms.forEach(matrix => {
+                    // Manual transform of buffer positions
+                    // Since we batch, we must transform CPU side
+                    for (let i = 0; i < pos.length; i += 3) {
+                        const v = new THREE.Vector3(pos[i], pos[i + 1], pos[i + 2]);
+                        v.applyMatrix4(matrix);
+                        targetArray.push(v.x, v.y, v.z);
+                    }
+                });
+                tempGeom.dispose(); // Immediate disposal
+                return;
             }
-            geometry = new THREE.BufferGeometry();
-            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-            geometry.computeVertexNormals();
         }
 
-        if (geometry) {
-            transforms.forEach(matrix => {
-                const instanceGeom = geometry.clone();
-                instanceGeom.applyMatrix4(matrix);
-                const mesh = new THREE.Mesh(instanceGeom, material);
-                this.symmetryGroup.add(mesh);
-            });
-            geometry.dispose();
-        }
+        // Flat Logic (Fan Triangulation)
+        const p0 = points[0];
+        transforms.forEach(matrix => {
+            const tP0 = p0.clone().applyMatrix4(matrix);
+            for (let i = 1; i < points.length - 1; i++) {
+                const p1 = points[i];
+                const p2 = points[i + 1];
+
+                const tP1 = p1.clone().applyMatrix4(matrix);
+                const tP2 = p2.clone().applyMatrix4(matrix);
+
+                // Push Triangle
+                targetArray.push(tP0.x, tP0.y, tP0.z);
+                targetArray.push(tP1.x, tP1.y, tP1.z);
+                targetArray.push(tP2.x, tP2.y, tP2.z);
+            }
+        });
     }
 
     // --- Ported Geometric Logic ---
