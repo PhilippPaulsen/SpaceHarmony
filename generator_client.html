@@ -217,6 +217,11 @@
                 <label for="maxSteps">Max Steps</label>
                 <input type="number" id="maxSteps" value="18">
             </div>
+            <div class="form-group">
+                <label for="maxEdges">Ergänzungen (Max Edges)</label>
+                <input type="number" id="maxEdges" value="50" min="0" max="200"
+                    title="Maximale Anzahl zusätzlicher Linien zum Schließen von Formen">
+            </div>
             <div class="form-group full-width">
                 <button id="generate-btn" onclick="startGeneration()">⚡ Formen im Browser generieren</button>
             </div>
@@ -287,6 +292,7 @@
                     mode: document.getElementById('mode').value,
                     minSteps: parseInt(document.getElementById('minSteps').value),
                     maxSteps: parseInt(document.getElementById('maxSteps').value),
+                    maxEdges: parseInt(document.getElementById('maxEdges').value), // Pass Max Edges
                     symmetryGroup: document.getElementById('mode').value === 'fullSymmetry' ? 'cubic' : null
                 }
             };
@@ -301,7 +307,8 @@
                 item.className = 'result-item';
 
                 const title = form.metadata.name || `Form ${index + 1}`;
-                const info = `Faces: ${form.metadata.faceCount}, Points: ${form.points.length}`;
+                // Display Volume Count
+                const info = `Faces: ${form.metadata.faceCount}, <strong>Volumes: ${form.metadata.volumeCount}</strong>, Points: ${form.points.length}`;
 
                 // Create Blobs
                 const jsonBlob = new Blob([JSON.stringify(form, null, 2)], { type: 'application/json' });

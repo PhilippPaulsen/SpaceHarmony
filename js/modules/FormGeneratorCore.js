@@ -474,6 +474,10 @@ function _validateForm(form) {
         }
     }
 
+    // Volume Check (Closed Shells)
+    // We pass the detected cycles (faces) to find closed volumes (e.g. Cubes, Tetrahedrons)
+    const volumes = _detectVolumeShells(cycles);
+
     // Connectivity Check (BFS)
     const visited = new Set();
     if (points.length > 0) {
@@ -496,11 +500,110 @@ function _validateForm(form) {
 
     return {
         faces: cycles.length,
-        volumes: 0, // Placeholder
+        volumes: volumes,
         isConnected,
         // Optional: Return cycle vertices for debug/viz if needed, but currently just counting
         closedLoops: cycles
     };
+}
+
+/**
+ * Detects Closed 3D Shells (Volumes).
+ * Analyzes the graph of Faces to find connected components that form a closed manifold.
+ * A component is "closed" if every edge in it belongs to at least 2 faces.
+ * 
+ * @param {Array<Array<number>>} faces Array of face indices
+ * @returns {number} Count of closed volumes
+ */
+function _detectVolumeShells(faces) {
+    if (!faces || faces.length < 4) return 0;
+
+    // 1. Build Edge Table: EdgeKey -> [FaceIndices]
+    const edgeToFaces = new Map();
+    faces.forEach((face, fIdx) => {
+        for (let i = 0; i < face.length; i++) {
+            const a = face[i];
+            const b = face[(i + 1) % face.length];
+            const key = a < b ? `${a}-${b}` : `${b}-${a}`;
+            if (!edgeToFaces.has(key)) edgeToFaces.set(key, []);
+            edgeToFaces.get(key).push(fIdx);
+        }
+    });
+
+    // 2. Build Face Adjacency (undirected)
+    const faceAdjacency = new Map(); // fIdx -> Set(fIdx)
+    for (let i = 0; i < faces.length; i++) faceAdjacency.set(i, new Set());
+
+    edgeToFaces.forEach((faceIndices, edgeKey) => {
+        // Connect all faces sharing this edge
+        for (let i = 0; i < faceIndices.length; i++) {
+            for (let j = i + 1; j < faceIndices.length; j++) {
+                const f1 = faceIndices[i];
+                const f2 = faceIndices[j];
+                faceAdjacency.get(f1).add(f2);
+                faceAdjacency.get(f2).add(f1);
+            }
+        }
+    });
+
+    // 3. Find Components
+    const visited = new Set();
+    let closedShells = 0;
+
+    for (let i = 0; i < faces.length; i++) {
+        if (visited.has(i)) continue;
+
+        const componentFaces = [];
+        const queue = [i];
+        visited.add(i);
+
+        while (queue.length > 0) {
+            const curr = queue.pop();
+            componentFaces.push(curr);
+            const neighbors = faceAdjacency.get(curr);
+            if (neighbors) {
+                neighbors.forEach(n => {
+                    if (!visited.has(n)) {
+                        visited.add(n);
+                        queue.push(n);
+                    }
+                });
+            }
+        }
+
+        // 4. Check if Component is Closed
+        // Rule: Every edge used by this component must be shared by at least 2 faces WITHIN this component.
+        // If any edge has only 1 face in this component, it has a "hole".
+
+        // Collect all edges used by this component
+        const componentEdges = new Map(); // EdgeKey -> count
+        let isClosed = true;
+
+        componentFaces.forEach(fIdx => {
+            const face = faces[fIdx];
+            for (let k = 0; k < face.length; k++) {
+                const a = face[k];
+                const b = face[(k + 1) % face.length];
+                const key = a < b ? `${a}-${b}` : `${b}-${a}`;
+                componentEdges.set(key, (componentEdges.get(key) || 0) + 1);
+            }
+        });
+
+        // Check counts
+        for (const count of componentEdges.values()) {
+            if (count < 2) {
+                isClosed = false;
+                break;
+            }
+        }
+
+        // Minimum faces for a volume is 4 (Tetrahedron)
+        if (isClosed && componentFaces.length >= 4) {
+            closedShells++;
+        }
+    }
+
+    return closedShells;
 }
 
 /**

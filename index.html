@@ -177,6 +177,11 @@
                     <input type="checkbox" id="toggle-color-highlights" />
                     <span class="material-icons-outlined" aria-hidden="true">highlight_alt</span>
                   </label>
+                  <label class="icon-toggle" data-i18n-title="ui.auto.rotate" title="Auto Rotate"
+                    aria-label="Auto Rotate">
+                    <input type="checkbox" id="toggle-auto-rotate" checked />
+                    <span class="material-icons-outlined" aria-hidden="true">360</span>
+                  </label>
                 </div>
               </div>
             </details>
@@ -300,6 +305,10 @@
       </div>
       <div style="margin:15px 0;">
         <label>Min Faces: <input type="number" id="gen-minfaces" value="4" min="4" step="2"></label>
+      </div>
+      <div style="margin:15px 0;">
+        <label>Ergänzungen (Max Edges): <input type="number" id="gen-maxedges" value="50" min="0" max="200"
+            title="Versucht Formen zu schließen"></label>
       </div>
       <div style="display:flex; gap:10px; justify-content:flex-end;">
         <button id="gen-close" class="action-btn" style="background: #555;">Close</button>

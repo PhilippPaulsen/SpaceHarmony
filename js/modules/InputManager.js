@@ -8,7 +8,7 @@ export class InputManager {
         this.callbacks = callbacks; // { onClick: (intersect) => {}, onDrag: () => {} }
 
         this.raycaster = new THREE.Raycaster();
-        this.raycaster.params.Points.threshold = 0.3; // Significantly increased threshold for easier clicking
+        this.raycaster.params.Points.threshold = 0.05; // Reduced from 0.3 for precision. Rely on point SIZE instead.
         this.pointer = new THREE.Vector2();
         this.pointerDown = false;
         this.dragging = false;
@@ -91,20 +91,16 @@ export class InputManager {
         const intersects = this.raycaster.intersectObjects(this.pickableMeshes, false); // false for recursive?
 
         if (intersects.length > 0) {
-            // Sort by distance first
+            // Sort by distance from camera
             intersects.sort((a, b) => a.distance - b.distance);
 
-            // Prioritize Points (InstanceMesh) over Grid/Other
-            // If a point is within a very close range of the first intersection, prefer it.
-            const first = intersects[0];
-            const tolerance = 0.5; // If point is within 0.5 units of the closest hit (likely grid), take point.
+            // If we hit the PickingCloud ("GridPoints"), return it immediately.
+            // The PickingCloud logic in App.js ensures the hit sizes are reasonable.
+            // If the ray hits a point, it's a valid hit.
+            const pointHit = intersects.find(hit => hit.object.name === 'GridPoints');
+            if (pointHit) return pointHit;
 
-            const pointHit = intersects.find(hit => hit.object.name === 'GridPoints' || (hit.object.instanceMatrix !== undefined));
-
-            if (pointHit && (pointHit.distance - first.distance < tolerance)) {
-                return pointHit;
-            }
-
+            // Fallback to other hits (e.g. gridMesh instance if for some reason picking cloud missed)
             return intersects[0];
         }
         return null;

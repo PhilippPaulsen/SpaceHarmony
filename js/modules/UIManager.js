@@ -17,12 +17,12 @@ export class UIManager {
             'grid-density',
             'toggle-points', 'toggle-lines', 'toggle-curved-lines', 'toggle-curved-surfaces',
             'close-face-button', 'close-volume-button', 'auto-close-all-button',
-            'toggle-show-closed', 'toggle-auto-close', 'toggle-color-highlights',
+            'toggle-show-closed', 'toggle-auto-close', 'toggle-color-highlights', 'toggle-auto-rotate',
             'reflection-xy', 'reflection-yz', 'reflection-zx', 'toggle-inversion',
             'rotation-axis',
             'rotoreflection-axis', 'rotoreflection-plane', 'rotoreflection-angle', 'rotoreflection-count', 'rotoreflection-enabled',
             'face-count',
-            'btn-generator', 'generator-modal', 'gen-close', 'gen-start', 'gen-symmetry', 'gen-count', 'gen-minfaces', 'gen-results', 'gen-status'
+            'btn-generator', 'generator-modal', 'gen-close', 'gen-start', 'gen-symmetry', 'gen-count', 'gen-minfaces', 'gen-maxedges', 'gen-results', 'gen-status'
         ];
 
         ids.forEach(id => {
@@ -66,6 +66,7 @@ export class UIManager {
         this._bindChange('toggle-show-closed', 'onToggleShowClosed');
         this._bindChange('toggle-auto-close', 'onToggleAutoClose');
         this._bindChange('toggle-color-highlights', 'onToggleColorHighlights');
+        this._bindChange('toggle-auto-rotate', 'onToggleAutoRotate');
 
         // Symmetry
         this._bindChange('reflection-xy', 'onSymmetryChange');
@@ -96,7 +97,8 @@ export class UIManager {
             const config = {
                 symmetryGroup: this._getValue('gen-symmetry'),
                 count: this._getValue('gen-count'),
-                minFaces: this._getValue('gen-minfaces')
+                minFaces: this._getValue('gen-minfaces'),
+                maxEdges: this._getValue('gen-maxedges')
             };
             if (this.callbacks['onGenerate']) this.callbacks['onGenerate'](config);
         });
@@ -274,9 +276,10 @@ export class UIManager {
             const info = document.createElement('div');
             info.style.flex = '1';
             const faces = res.metadata ? res.metadata.faceCount : '?';
+            const volumes = res.metadata && res.metadata.volumeCount !== undefined ? res.metadata.volumeCount : 0;
             const sym = res.metadata ? res.metadata.symmetry : '?';
             info.innerHTML = `<div style="font-weight:600;font-size:0.9rem;">Form #${idx + 1}</div>
-                              <div style="font-size:0.75rem;opacity:0.7;">Faces: ${faces} • ${sym}</div>`;
+                              <div style="font-size:0.75rem;opacity:0.7;">Faces: ${faces} • Volumes: ${volumes} • ${sym}</div>`;
             wrapper.appendChild(info);
 
             // Action

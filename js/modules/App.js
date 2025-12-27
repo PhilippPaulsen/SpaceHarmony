@@ -103,6 +103,7 @@ export class App {
             onToggleShowClosed: (val) => this._updateVisibility('closedForms', val),
             onToggleAutoClose: (val) => { this.autoCloseFaces = val; },
             onToggleColorHighlights: (val) => { this.useRegularHighlight = val; this._rebuildSymmetryObjects(); },
+            onToggleAutoRotate: (val) => this.sceneManager.toggleAutoRotate(val),
             onExportJSON: () => this._exportJSON(),
             onExportOBJ: () => this._exportOBJ(),
             onExportSTL: () => this._exportSTL(),
@@ -181,7 +182,8 @@ export class App {
                 pointDensity: this.gridDivisions + 1, // Match App density
                 options: {
                     mode: config.mode,
-                    symmetryGroup: config.symmetryGroup
+                    symmetryGroup: config.symmetryGroup,
+                    maxEdges: config.maxEdges
                 }
             };
             this.worker.postMessage(workerConfig);
@@ -481,9 +483,16 @@ export class App {
             this.sceneManager.scene.remove(this.pickingCloud);
         }
         const pickGeom = new THREE.BufferGeometry().setFromPoints(this.gridPoints);
+
+        // Dynamic Size: Scaling with density to avoid overlap
+        // Grid Size 1 means range 1.0. Divisions N. Step = 1/N.
+        // We want hit area to be smaller than step/2.
+        const spacing = 1.0 / Math.max(1, this.gridDivisions);
+        const hitSize = Math.max(0.04, Math.min(0.1, spacing * 0.6));
+
         const pickMat = new THREE.PointsMaterial({
             color: 0xff0000,
-            size: 0.1, // Much larger hit area (radius ~0.05)
+            size: hitSize,
             transparent: true,
             opacity: 0.0, // Invisible
             depthTest: false // Always hittable? Maybe keep true to avoid hitting back points.

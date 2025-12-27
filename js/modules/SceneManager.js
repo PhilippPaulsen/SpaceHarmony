@@ -137,4 +137,10 @@ export class SceneManager {
         this.controls.update();
         this.renderer.render(this.scene, this.camera);
     }
+
+    toggleAutoRotate(enabled) {
+        if (this.controls) {
+            this.controls.autoRotate = enabled;
+        }
+    }
 }
