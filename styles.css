@@ -571,7 +571,35 @@ output {
   overflow-y: auto;
   margin-top: 12px;
 }
+
 /* Point Density Spacing */
-.control-row:has(#grid-density) {
-  margin-top: 12px;
+
+/* Responsive 50/50 Split for Desktop */
+@media (min-width: 1024px) {
+  .workspace-grid {
+    flex-wrap: nowrap;
+    /* Prevent wrapping on large screens */
+  }
+
+  .canvas-card {
+    flex: 1 1 0;
+    /* Equal width */
+    min-width: 0;
+    /* Prevent overflow issues */
+    height: auto;
+    /* Allow full height */
+  }
+
+  .workspace-grid>aside {
+    flex: 1 1 0;
+    /* Equal width */
+    min-width: 0;
+    height: auto;
+  }
+
+  .control-card {
+    height: 100%;
+    max-height: unset;
+    /* Allow creating a full-height column */
+  }
 }
