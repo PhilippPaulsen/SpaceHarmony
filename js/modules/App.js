@@ -440,6 +440,8 @@ export class App {
             const color = hasTheme ? 0xffffff : 0x000000;
             this.gridMesh.material.color.setHex(color);
         }
+        this._updateNodeColors();
+        this._rebuildSymmetryObjects();
     }
 
     _updateGridDensity(val) {
@@ -1188,32 +1190,50 @@ export class App {
 
         // 7. Construct Unified Meshes
         // Materials
-        const lineMat = new THREE.LineBasicMaterial({ color: 0x000000 });
+        const theme = document.documentElement.dataset.theme || 'light';
+        const isDark = theme === 'dark';
+
+        const lineMat = new THREE.LineBasicMaterial({
+            color: isDark ? 0xffffff : 0x000000,
+            transparent: true,
+            opacity: isDark ? 0.15 : 0.25
+        });
 
         const faceMat = new THREE.MeshPhongMaterial({
-            color: 0xbbbbbb,
+            color: isDark ? 0x445566 : 0xdddddd,
             transparent: true,
-            opacity: 0.15,
+            opacity: isDark ? 0.3 : 0.35,
             side: THREE.DoubleSide,
             depthWrite: false,
             flatShading: false,
-            shininess: 30,
-            specular: 0x222222
+            shininess: 40,
+            specular: 0x444444
         });
 
         const volumeMat = new THREE.MeshPhongMaterial({
-            color: 0x888888,
+            color: isDark ? 0x556677 : 0x999999,
             transparent: true,
-            opacity: 0.25,
+            opacity: isDark ? 0.4 : 0.45,
             side: THREE.DoubleSide,
             depthWrite: false,
             flatShading: false,
-            shininess: 30,
-            specular: 0x222222
+            shininess: 40,
+            specular: 0x444444
         });
 
-        const traceLineMat = new THREE.LineBasicMaterial({ color: 0x666666, transparent: true, opacity: 0.5 });
-        const traceFaceMat = new THREE.MeshBasicMaterial({ color: 0xaaaaaa, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false });
+        const traceLineMat = new THREE.LineBasicMaterial({
+            color: isDark ? 0x888888 : 0x999999,
+            transparent: true,
+            opacity: 0.2
+        });
+        const traceFaceMat = new THREE.MeshBasicMaterial({
+            color: isDark ? 0x445566 : 0xdddddd,
+            transparent: true,
+            opacity: isDark ? 0.05 : 0.08,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            // blending: THREE.AdditiveBlending // Optional: Consider for "glow" effect in dark mode
+        });
 
         const createBatchMesh = (arr, mat, isLine) => {
             if (arr.length === 0) return;
