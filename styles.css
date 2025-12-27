@@ -97,7 +97,8 @@ body::before {
 .workspace-grid {
   /* Haupt-Layout für Canvas und Controls */
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  /* Stack vertically by default (Mobile/Tablet) */
   gap: clamp(18px, 3vw, 28px);
 }
 
@@ -577,8 +578,9 @@ output {
 /* Responsive 50/50 Split for Desktop */
 @media (min-width: 1200px) {
   .workspace-grid {
+    flex-direction: row;
+    /* Side-by-side on large screens only */
     flex-wrap: nowrap;
-    /* Prevent wrapping on large screens */
   }
 
   .canvas-card {
