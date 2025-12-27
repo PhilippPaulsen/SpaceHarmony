@@ -83,6 +83,15 @@
 
           <details open>
             <summary data-i18n="ui.display">Display</summary>
+
+            <div class="control-row" style="margin-bottom: 8px;">
+              <span class="control-label">System</span>
+              <select id="coord-system" class="select-field" style="max-width: 140px;">
+                <option value="cubic">Cubic</option>
+                <option value="icosahedral">Icosahedral</option>
+              </select>
+            </div>
+
             <div class="control-row">
               <span class="control-label" data-i18n="ui.density">Point Density</span>
               <div style="display:flex; align-items:center; gap:8px;">
@@ -195,7 +204,7 @@
               <span data-i18n="ui.symmetries">Symmetries</span>
             </summary>
             <div class="control-content">
-              <div class="icon-toggle-grid">
+              <div id="cubic-symmetries" class="icon-toggle-grid">
                 <label class="icon-toggle" data-i18n-title="ui.reflection.xy" title="Reflection XY"
                   aria-label="Reflection XY">
                   <input type="checkbox" id="reflection-xy" checked />
@@ -214,12 +223,22 @@
                   <span class="material-icons-outlined" aria-hidden="true">flip</span>
                   <span class="icon-hint">ZX</span>
                 </label>
-                <label class="icon-toggle" data-i18n-title="ui.inversion" title="Enable Inversion"
-                  aria-label="Enable Inversion">
-                  <input type="checkbox" id="toggle-inversion" />
-                  <span class="material-icons-outlined" aria-hidden="true">all_out</span>
+              </div>
+
+              <div id="icosahedral-symmetries" class="icon-toggle-grid"
+                style="display:none; grid-template-columns: 1fr;">
+                <label class="icon-toggle" style="width: auto; justify-content: flex-start; padding-left: 10px;"
+                  data-i18n-title="ui.symmetry.full_ih" title="Full Icosahedral Symmetry">
+                  <input type="checkbox" id="toggle-full-icosa" checked />
+                  <span class="material-icons-outlined" aria-hidden="true">hub</span>
+                  <span style="font-size: 0.8rem; margin-left: 8px;">Full Symmetry ($I_h$)</span>
                 </label>
               </div>
+              <label class="icon-toggle" data-i18n-title="ui.inversion" title="Enable Inversion"
+                aria-label="Enable Inversion">
+                <input type="checkbox" id="toggle-inversion" />
+                <span class="material-icons-outlined" aria-hidden="true">all_out</span>
+              </label>
             </div>
           </details>
 
@@ -363,10 +382,21 @@
     <div class="modal-content" style="padding:20px; border-radius:12px; max-width:500px; width:90%;">
       <h2 data-i18n="ui.generator_title">Form Generator</h2>
       <div style="margin:15px 0;">
+        <label>Preset:
+          <select id="gen-preset" style="width:100%; margin-top:5px; padding:4px;">
+            <option value="custom">Custom</option>
+            <option value="platonic" selected>Platonic / Simple Solids</option>
+            <option value="complex">Complex / Star Forms</option>
+            <option value="organic">Organic / Random</option>
+          </select>
+        </label>
+      </div>
+      <div style="margin:15px 0;">
         <label>Symmetry Group:
           <select id="gen-symmetry">
             <option value="cubic">Cubic (Octahedral)</option>
             <option value="tetrahedral">Tetrahedral</option>
+            <option value="icosahedral">Icosahedral</option>
           </select>
         </label>
       </div>

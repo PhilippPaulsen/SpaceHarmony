@@ -18,7 +18,8 @@ export class SceneManager {
         this._setupRenderer();
         this._setupControls();
         this._setupLighting();
-        this._addCubeFrame();
+        this._setupLighting();
+        this.updateFrame('cubic');
 
         window.addEventListener('resize', () => this.onResize());
     }
@@ -73,34 +74,100 @@ export class SceneManager {
     }
 
     _setupLighting() {
-        // 1. Ambient Light (Softer base to allow shadows)
+        // 1. Ambient Light (Softer base)
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
         this.scene.add(ambientLight);
 
-        // 2. Key Light (Main Source - Top Right Front)
-        const keyLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        // 2. Key Light (Warm Main Source - Top Right Front)
+        const keyLight = new THREE.DirectionalLight(0xffffee, 1.0);
         keyLight.position.set(5, 8, 5);
         this.scene.add(keyLight);
 
-        // 3. Fill Light (Soften shadows - Left)
-        const fillLight = new THREE.DirectionalLight(0xffffff, 0.5); // Neutral White
+        // 3. Fill Light (Cool Side Source - Left) - Adds color contrast to defined edges
+        const fillLight = new THREE.DirectionalLight(0xddeeff, 0.6);
         fillLight.position.set(-5, 3, 5);
         this.scene.add(fillLight);
 
-        // 4. Rim Light (Backlight for edge definition)
-        const rimLight = new THREE.DirectionalLight(0xffffff, 0.6); // Neutral White, slightly reduced intensity
+        // 4. Rim Light (Backlight) - Highlights the silhouette
+        const rimLight = new THREE.DirectionalLight(0xffffff, 0.5);
         rimLight.position.set(0, 5, -5);
         this.scene.add(rimLight);
     }
 
-    _addCubeFrame() {
-        const size = CONFIG.CUBE_HALF_SIZE;
-        const geometry = new THREE.BoxGeometry(size * 2, size * 2, size * 2);
-        const edges = new THREE.EdgesGeometry(geometry);
 
-        // Create separate materials for light and dark modes? 
-        // For now, we use a default color that handles theme changes via updateTheme
-        const material = new THREE.LineBasicMaterial({ color: 0xcccccc });
+
+    updateFrame(type = 'cubic') {
+        if (this.cubeFrame) {
+            this.scene.remove(this.cubeFrame);
+            this.cubeFrame.geometry.dispose();
+            this.cubeFrame.material.dispose();
+            this.cubeFrame = null;
+        }
+
+        let geometry;
+        if (type === 'icosahedral') {
+            // Construct manually to ensure 100% alignment with GridSystem points
+            const scale = CONFIG.CUBE_HALF_SIZE;
+            const phi = (1 + Math.sqrt(5)) / 2;
+
+            // Same raw vertices as GridSystem
+            const t = phi;
+            const rawVertices = [
+                new THREE.Vector3(-1, t, 0), new THREE.Vector3(1, t, 0), new THREE.Vector3(-1, -t, 0), new THREE.Vector3(1, -t, 0),
+                new THREE.Vector3(0, -1, t), new THREE.Vector3(0, 1, t), new THREE.Vector3(0, -1, -t), new THREE.Vector3(0, 1, -t),
+                new THREE.Vector3(t, 0, -1), new THREE.Vector3(t, 0, 1), new THREE.Vector3(-t, 0, -1), new THREE.Vector3(-t, 0, 1)
+            ];
+
+            const vertices = rawVertices.map(v => v.clone().normalize().multiplyScalar(scale));
+
+            // Create convex hull edges or explicit connections
+            // Explicit Icosahedron Edges (indices)
+            // Derived from proximity (~1.05 * scale if normalized on unit sphere? No, distance is 2/sqrt(1+phi^2))
+            // Normalized edge length is constant. 
+            // Let's us geometry to find edges by distance
+            geometry = new THREE.BufferGeometry().setFromPoints(vertices);
+            // Use ConvexHull logic or just hardcode indices? Hardcoding is tedious.
+            // Easier: Use IcosahedronGeometry to get indices, but overwrite positions!
+            const baseGeo = new THREE.IcosahedronGeometry(1, 0); // Radius 1
+            // The order of vertices in IcosahedronGeometry(1,0) MATCHES the standard construction (usually).
+            // But to be safe, let's SNAP our vertices to the closest vertex in baseGeo and copy index? 
+            // Or just use baseGeo and assume it's correct? 
+            // The mismatch suggests baseGeo IS different.
+            // So I should use my vertices.
+            // And compute edges by distance.
+            const indices = [];
+            const threshold = 2.0 * scale / Math.sqrt(1 + phi * phi) + 0.01; // Edge length + tolerance? 
+            // Distance on unit sphere is ~1.05. 
+            // 2 / sqrt(1 + 2.618) = 2 / 1.9 = 1.05. Correct.
+            const distSqThreshold = (1.1 * 1.1) * scale * scale; // slightly larger than 1.05^2
+
+            for (let i = 0; i < vertices.length; i++) {
+                for (let j = i + 1; j < vertices.length; j++) {
+                    if (vertices[i].distanceToSquared(vertices[j]) < distSqThreshold) {
+                        indices.push(i, j);
+                    }
+                }
+            }
+            geometry.setIndex(indices);
+
+            // For Icosahedral, we already built the wireframe indices manually.
+            // Using EdgesGeometry on a line-only geometry is invalid/undefined behavior.
+            const theme = document.documentElement.dataset.theme || 'light';
+            const color = theme === 'dark' ? 0x444444 : 0xcccccc;
+            const material = new THREE.LineBasicMaterial({ color: color });
+
+            this.cubeFrame = new THREE.LineSegments(geometry, material);
+            this.scene.add(this.cubeFrame);
+            return; // Skip the BoxGeometry path
+        } else {
+            const size = CONFIG.CUBE_HALF_SIZE;
+            geometry = new THREE.BoxGeometry(size * 2, size * 2, size * 2);
+        }
+
+        const edges = new THREE.EdgesGeometry(geometry);
+        const theme = document.documentElement.dataset.theme || 'light';
+        const color = theme === 'dark' ? 0x444444 : 0xcccccc;
+        const material = new THREE.LineBasicMaterial({ color: color });
         this.cubeFrame = new THREE.LineSegments(edges, material);
         this.scene.add(this.cubeFrame);
     }

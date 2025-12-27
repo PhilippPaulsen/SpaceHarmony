@@ -42,21 +42,48 @@ export const GeometryUtils = {
         return sorted.join('__');
     },
 
-    isPlanar(keys, tolerance = 1e-4) {
-        if (keys.length < 4) {
+    isPlanar(keysOrVectors, tolerance = 1e-4) {
+        if (!Array.isArray(keysOrVectors) || keysOrVectors.length < 4) {
             return true; // Triangles are always planar
         }
-        const points = keys.map((key) => GeometryUtils.vectorFromKey(key));
+
+        let points;
+        // Check element type
+        if (keysOrVectors[0] && typeof keysOrVectors[0] === 'object' && keysOrVectors[0].isVector3) {
+            points = keysOrVectors;
+        } else {
+            points = keysOrVectors.map((key) => GeometryUtils.vectorFromKey(key));
+        }
+
         if (points.some((p) => !p)) {
             return false;
         }
 
         const [p0, p1, p2, p3] = points;
+        // Normal calculation:
+        // Use simpler method: subtract p0
         const v1 = new THREE.Vector3().subVectors(p1, p0);
         const v2 = new THREE.Vector3().subVectors(p2, p0);
         const v3 = new THREE.Vector3().subVectors(p3, p0);
 
+        // Scalar triple product: dot(v3, cross(v1, v2))
+        // This calculates the volume of the parallelepiped. Ideally 0 for planar.
         const volume = Math.abs(v3.dot(v1.clone().cross(v2)));
+
+        // For >4 points, we should check ALL against the plane.
+        // But for pentagons (5 points), checking the first 4 is usually a good heuristic if we assume convexity/regularity,
+        // but robustly we should check p4 too.
+        if (points.length > 4) {
+            const normal = v1.clone().cross(v2).normalize();
+            // Plane passes through p0 with normal.
+            // Check distances of all other points
+            for (let i = 3; i < points.length; i++) {
+                const vec = new THREE.Vector3().subVectors(points[i], p0);
+                if (Math.abs(vec.dot(normal)) > tolerance) return false;
+            }
+            return true;
+        }
+
         return volume < tolerance;
     },
 

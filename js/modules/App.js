@@ -6,6 +6,7 @@ import { UIManager } from './UIManager.js';
 import { SymmetryEngine } from './SymmetryEngine.js';
 import { GeometryUtils } from './GeometryUtils.js';
 import { LocalizationManager } from './LocalizationManager.js';
+import { GridSystem } from './GridSystem.js';
 
 export class App {
     constructor() {
@@ -24,6 +25,7 @@ export class App {
 
         this.sceneManager = new SceneManager(this.container);
         this.symmetry = new SymmetryEngine();
+        this.gridSystem = new GridSystem(); // Initialize GridSystem
         this.localization = new LocalizationManager();
         this.sceneManager.updateTheme(initialTheme);
 
@@ -87,14 +89,16 @@ export class App {
         this.materials = {
             line: new THREE.LineBasicMaterial({ color: 0x000000 }),
             face: new THREE.MeshPhongMaterial({
-                color: 0xbbbbbb,
-                transparent: true, opacity: 0.25,
-                side: THREE.DoubleSide, depthWrite: false, flatShading: true, shininess: 40, specular: 0x444444
+                color: 0x888888, // Darker gray
+                transparent: true, opacity: 0.60,
+                side: THREE.DoubleSide, depthWrite: false, flatShading: true,
+                shininess: 80, specular: 0x888888 // Higher shininess + stronger specular for "chiselled" look
             }),
             volume: new THREE.MeshPhongMaterial({
-                color: 0x888888,
-                transparent: true, opacity: 0.40,
-                side: THREE.DoubleSide, depthWrite: false, flatShading: true, shininess: 60, specular: 0x666666
+                color: 0x666666, // Even darker for volumes
+                transparent: true, opacity: 0.70,
+                side: THREE.DoubleSide, depthWrite: false, flatShading: true,
+                shininess: 100, specular: 0xaaaaaa
             }),
             traceLine: new THREE.LineBasicMaterial({
                 color: 0x666666, transparent: true, opacity: 0.5
@@ -110,6 +114,7 @@ export class App {
             onUndo: () => this._undo(),
             onRedo: () => this._redo(),
             onClear: () => this._clearAll(),
+            onSystemChange: (val) => this._updateSystem(val),
             onDensityChange: (val) => this._updateGridDensity(val),
             onSymmetryChange: () => this._updateSymmetry(),
             onCloseFace: () => this._closeSelectedFace(),
@@ -144,6 +149,45 @@ export class App {
         this._setDefaultSymmetry();
         this._startRenderLoop();
         this._initLocalization().then(() => this._updateStatusDisplay());
+    }
+
+    _updateSystem(system) {
+        this.gridSystem.setSystem(system);
+
+        // Reset symmetry defaults based on system
+        if (system === 'icosahedral') {
+            // Reset traditional cubic reflections as they don't apply well to Ih
+            this.symmetry.settings.reflections = {
+                xy: false, yz: false, zx: false,
+                xy_diag: false, yz_diag: false, zx_diag: false
+            };
+            this.uiManager.updateSymmetryUI('icosahedral');
+            if (this.uiManager.elements['toggle-full-icosa']) {
+                this.uiManager.elements['toggle-full-icosa'].checked = true;
+                // Force update internal symmetry engine state immediately
+                this.uiManager.triggerChange('toggle-full-icosa');
+            }
+            // Force closed forms on for better visibility of tessellations
+            this.showClosedForms = true;
+            if (this.uiManager.elements['toggle-show-closed']) {
+                this.uiManager.elements['toggle-show-closed'].checked = true;
+            }
+        } else {
+            // Cubic defaults
+            this.symmetry.settings.reflections = { xy: true, yz: true, zx: true };
+            this.uiManager.updateSymmetryUI('cubic');
+        }
+
+        if (this.sceneManager) {
+            this.sceneManager.updateFrame(system);
+        }
+
+        // Full Cleanup of old forms
+        this._clearState();
+
+        this._generateGridPoints();
+        this._rebuildVisuals();
+        this._clearAll();
     }
 
     _setDefaultSymmetry() {
@@ -208,7 +252,8 @@ export class App {
                 count: config.count || 5,
                 minFaces: config.minFaces || 0,
                 gridSize: 3, // Keep internal grid size 3 for generator logic
-                pointDensity: this.gridDivisions + 1, // Match App density
+
+                pointDensity: (config.symmetryGroup === 'icosahedral') ? Math.max(this.gridDivisions + 1, 4) : (this.gridDivisions + 1), // Force higher density for Icosahedral to ensure nested shells exist
                 options: {
                     mode: config.mode,
                     symmetryGroup: config.symmetryGroup,
@@ -221,6 +266,30 @@ export class App {
 
     loadGeneratedForm(formData) {
         this._clearAll();
+
+        // 0. Auto-Density Scaling (Improve Visualization)
+        // If the form was generated with a higher density (e.g. Icosahedral forced to 4),
+        // we must upgrade the view so the points don't look like floating chaos.
+        if (this.currentSystem === 'icosahedral') {
+            const densitySlider = this.uiManager.elements['grid-density'];
+            if (densitySlider) {
+                const currentVal = parseInt(densitySlider.value, 10);
+                if (currentVal < 4) {
+                    console.log('[App] Auto-upgrading density to 4 for Icosahedral form visualization');
+                    densitySlider.value = "4";
+                    // Trigger update
+                    // We can use triggerChange if available, or manually dispatch
+                    if (this.uiManager.triggerChange) {
+                        this.uiManager.triggerChange('grid-density');
+                    } else {
+                        densitySlider.dispatchEvent(new Event('input'));
+                    }
+                    // Force immediate update of internal state if strictly needed before processing points
+                    this.gridDivisions = 3; // 4 - 1
+                    this._updateGrid();
+                }
+            }
+        }
 
         // 1. Dynamic Point Merging
         // Instead of snapping to existing grid, we existing grid + new points.
@@ -452,42 +521,43 @@ export class App {
         this._clearAll();
     }
 
+    _clearState() {
+        this.baseSegments = [];
+        this.edges.clear();
+        this.manualFaces.clear();
+        this.baseFaces = [];
+        this.baseVolumes = [];
+        this.manualVolumes.clear();
+        this.activePointIndex = null;
+        this.selectedPointIndices.clear();
+
+        // Also clear history? Probably yes, as undoing across system switch is dangerous.
+        this.history = [];
+        this.future = [];
+
+        // Visuals will be rebuilt by caller
+    }
+
     _generateGridPoints() {
         this.gridPoints = [];
         this.pointLookup.clear();
         this.pointIndexLookup.clear();
         this.pointKeyLookup.clear();
 
-        const count = this.gridDivisions;
-        const step = (CONFIG.CUBE_HALF_SIZE * 2) / count;
+        // Delegate generation to GridSystem
+        const rawPoints = this.gridSystem.generatePoints(this.gridDivisions, CONFIG.CUBE_HALF_SIZE);
 
-        const positions = [];
-        for (let i = 0; i <= count; i++) {
-            positions.push(parseFloat((-CONFIG.CUBE_HALF_SIZE + step * i).toFixed(5)));
-        }
-
-        positions.forEach(x => {
-            positions.forEach(y => {
-                positions.forEach(z => {
-                    const point = new THREE.Vector3(x, y, z);
-                    const key = GeometryUtils.pointKey(point);
-                    this.pointLookup.set(key, point);
-                    this.pointIndexLookup.set(key, this.gridPoints.length);
-                    this.pointKeyLookup.set(this.gridPoints.length, key);
-                    this.gridPoints.push(point);
-                });
-            });
+        // Map to internal lookup structures
+        rawPoints.forEach(p => {
+            const key = GeometryUtils.pointKey(p);
+            // Avoid duplicates (GridSystem should handle it, but double check)
+            if (!this.pointLookup.has(key)) {
+                this.pointLookup.set(key, p);
+                this.pointIndexLookup.set(key, this.gridPoints.length);
+                this.pointKeyLookup.set(this.gridPoints.length, key);
+                this.gridPoints.push(p);
+            }
         });
-
-        const hasCenter = positions.some(v => Math.abs(v) < 1e-6);
-        if (!hasCenter && this.gridDivisions > 1) {
-            const center = new THREE.Vector3(0, 0, 0);
-            const key = GeometryUtils.pointKey(center);
-            this.pointLookup.set(key, center);
-            this.pointIndexLookup.set(key, this.gridPoints.length);
-            this.pointKeyLookup.set(this.gridPoints.length, key);
-            this.gridPoints.push(center);
-        }
     }
 
     _rebuildVisuals() {
@@ -965,6 +1035,52 @@ export class App {
             }
         }
 
+        // 3. Find Planar Pentagons (5-cycles)
+        // Icosahedral System needs Pentagons (Dodecahedron faces)
+        for (let i = 0; i < keys.length; i++) {
+            const keyA = keys[i];
+            const neighborsA = this.adjacencyGraph.get(keyA);
+            if (!neighborsA) continue;
+
+            for (const keyB of neighborsA) {
+                if (keyB <= keyA) continue;
+
+                const neighborsB = this.adjacencyGraph.get(keyB);
+                for (const keyC of neighborsB) {
+                    if (keyC === keyA) continue;
+
+                    const neighborsC = this.adjacencyGraph.get(keyC);
+                    for (const keyD of neighborsC) {
+                        if (keyD === keyB || keyD === keyA) continue;
+
+                        const neighborsD = this.adjacencyGraph.get(keyD);
+                        for (const keyE of neighborsD) {
+                            if (keyE === keyC || keyE === keyB || keyE === keyA) continue;
+
+                            // Check if E closes back to A
+                            if (neighborsA.has(keyE)) {
+                                // Found 5-cycle A-B-C-D-E-A
+                                const pentKeys = [keyA, keyB, keyC, keyD, keyE];
+
+                                // Planarity Check
+                                if (GeometryUtils.isPlanar(pentKeys, 0.05)) {
+                                    // Order physically
+                                    const orderedResult = GeometryUtils.orderFaceKeys(pentKeys);
+                                    if (orderedResult) {
+                                        const faceKey = GeometryUtils.faceKeyFromKeys(orderedResult.ordered);
+                                        if (!foundFaces.has(faceKey)) {
+                                            faces.push({ keys: orderedResult.ordered, key: faceKey, source: 'auto' });
+                                            foundFaces.add(faceKey);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         this.baseFaces = faces;
         this._updateVolumes();
     }
@@ -1078,16 +1194,26 @@ export class App {
 
 
     _rebuildSymmetryObjects() {
-        // 1. Remove old symmetry group
-        if (this.symmetryGroup) {
-            this.sceneManager.scene.remove(this.symmetryGroup);
+        const uiState = this.uiManager.getSymmetryState();
+
+        let transforms;
+        if (this.gridSystem.system === 'icosahedral' && uiState.reflections.fullIcosa) {
+            // Override manual settings with full Icosahedral group
+            transforms = this.symmetry.getGroupMatrices('icosahedral');
+        } else {
+            transforms = this.symmetry.getTransforms();
         }
 
+        // Clean up old
+        if (this.symmetryGroup) {
+            this.sceneManager.scene.remove(this.symmetryGroup);
+            this.symmetryGroup.traverse(o => {
+                if (o.geometry) o.geometry.dispose();
+                // Don't dispose cached materials
+            });
+            this.symmetryGroup = null;
+        }
         this.symmetryGroup = new THREE.Group();
-
-        // 2. Generate Copies
-        // Transform segments
-        const transforms = this.symmetry.getTransforms();
 
         // --- Update Cache Materials for Theme ---
         const theme = document.documentElement.dataset.theme || 'light';

@@ -13,10 +13,11 @@ export class UIManager {
             'theme-toggle',
             'undo-button', 'redo-button', 'clear-button', 'random-form-button',
             'import-json-button', 'export-json-button', 'export-obj-button', 'export-png-button',
-            'grid-density', 'toggle-auto-rotate',
+            'grid-density', 'toggle-auto-rotate', 'coord-system',
             'toggle-points', 'toggle-lines', 'toggle-show-closed', 'toggle-cube-frame',
             'toggle-curved-lines', 'toggle-curved-surfaces', 'curve-convexity',
             'reflection-xy', 'reflection-yz', 'reflection-zx', 'toggle-inversion',
+            'toggle-full-icosa', 'cubic-symmetries', 'icosahedral-symmetries',
             'rotation-axis',
             'rotoreflection-axis', 'rotoreflection-plane', 'rotoreflection-angle', 'rotoreflection-count', 'rotoreflection-enabled', 'rotoreflection-connect',
             'translation-axis', 'translation-count', 'translation-step', 'translation-connect',
@@ -49,6 +50,7 @@ export class UIManager {
         this._bindClick('export-png-button', 'onExportPNG');
 
         this._bindInput('grid-density', 'onDensityChange');
+        this._bindChange('coord-system', 'onSystemChange');
 
         // Toggles
         this._bindChange('toggle-points', 'onTogglePoints');
@@ -76,6 +78,7 @@ export class UIManager {
         this._bindChange('reflection-yz', 'onSymmetryChange');
         this._bindChange('reflection-zx', 'onSymmetryChange');
         this._bindChange('toggle-inversion', 'onSymmetryChange');
+        this._bindChange('toggle-full-icosa', 'onSymmetryChange');
 
         this._bindChange('rotation-axis', 'onSymmetryChange');
 
@@ -96,7 +99,47 @@ export class UIManager {
         });
 
         // Generator UI
-        this._bindClick('btn-generator', (e) => this._toggleModal('generator-modal', true));
+        if (this.elements['gen-preset']) {
+            this.elements['gen-preset'].addEventListener('change', (e) => {
+                const val = e.target.value;
+                if (val === 'custom') return;
+
+                // Presets
+                if (val === 'platonic') {
+                    this._setValue('gen-maxedges', 60); // Sufficient for Icosahedron (30 edges) + some buffer
+                    this._setValue('gen-minfaces', 4);
+                    this._setValue('gen-count', 5);
+                } else if (val === 'complex') {
+                    this._setValue('gen-maxedges', 120);
+                    this._setValue('gen-minfaces', 12);
+                    this._setValue('gen-count', 8);
+                } else if (val === 'organic') {
+                    this._setValue('gen-maxedges', 200);
+                    this._setValue('gen-minfaces', 20);
+                    this._setValue('gen-count', 3);
+                }
+            });
+        }
+
+        this._bindClick('btn-generator', (e) => {
+            // Auto-select symmetry based on current system
+            const currentSys = document.getElementById('coord-system')?.value;
+            const symSelect = this.elements['gen-symmetry'];
+            const presetSelect = this.elements['gen-preset'];
+
+            if (currentSys === 'icosahedral') {
+                if (symSelect) symSelect.value = 'icosahedral';
+                // Auto-pick 'platonic' for Ico mode as it's the most likely desired start
+                if (presetSelect) {
+                    presetSelect.value = 'platonic';
+                    // Trigger change to set values
+                    presetSelect.dispatchEvent(new Event('change'));
+                }
+            } else if (currentSys === 'cubic') {
+                if (symSelect && symSelect.value === 'icosahedral') symSelect.value = 'cubic';
+            }
+            this._toggleModal('generator-modal', true);
+        });
         this._bindClick('gen-close', (e) => this._toggleModal('generator-modal', false));
         this.elements['gen-start']?.addEventListener('click', () => {
             const config = {
@@ -107,6 +150,11 @@ export class UIManager {
             };
             if (this.callbacks['onGenerate']) this.callbacks['onGenerate'](config);
         });
+    }
+
+    _setValue(id, val) {
+        const el = this.elements[id];
+        if (el) el.value = val;
     }
 
     _bindClick(id, action) {
@@ -131,9 +179,15 @@ export class UIManager {
         if (!el) return;
 
         if (typeof action === 'function') {
-            el.addEventListener('change', (e) => action(this._getValue(id), e));
+            el.addEventListener('change', (e) => {
+                const val = this._getValue(id);
+                action(val, e);
+            });
         } else if (typeof action === 'string' && this.callbacks[action]) {
-            el.addEventListener('change', (e) => this.callbacks[action](this._getValue(id), e));
+            el.addEventListener('change', (e) => {
+                const val = this._getValue(id);
+                this.callbacks[action](val, e);
+            });
         }
     }
 
@@ -156,6 +210,13 @@ export class UIManager {
         return el.value;
     }
 
+    triggerChange(id) {
+        const el = this.elements[id];
+        if (el) {
+            el.dispatchEvent(new Event('change'));
+        }
+    }
+
     _updateSliderOutput(input) {
         const output = input.parentElement?.querySelector('output');
         if (!output) return;
@@ -172,7 +233,8 @@ export class UIManager {
                 xy: this._getValue('reflection-xy'),
                 yz: this._getValue('reflection-yz'),
                 zx: this._getValue('reflection-zx'),
-                inversion: this._getValue('toggle-inversion')
+                inversion: this._getValue('toggle-inversion'),
+                fullIcosa: this._getValue('toggle-full-icosa')
             },
             rotation: {
                 axis: this._getValue('rotation-axis')
@@ -368,5 +430,48 @@ export class UIManager {
     _toggleModal(id, show) {
         const el = this.elements[id];
         if (el) el.style.display = show ? 'flex' : 'none';
+    }
+
+    updateSymmetryUI(system) {
+        const cubicDiv = this.elements['cubic-symmetries'];
+        const icoDiv = this.elements['icosahedral-symmetries'];
+
+        if (system === 'icosahedral') {
+            if (cubicDiv) cubicDiv.style.display = 'none';
+            if (icoDiv) icoDiv.style.display = 'grid';
+        } else {
+            if (cubicDiv) cubicDiv.style.display = 'grid';
+            if (icoDiv) icoDiv.style.display = 'none';
+        }
+    }
+
+    showNotification(message, duration = 3000) {
+        const id = 'ui-notification-toast';
+        let toast = document.getElementById(id);
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = id;
+            toast.style.position = 'fixed';
+            toast.style.bottom = '20px';
+            toast.style.left = '50%';
+            toast.style.transform = 'translateX(-50%)';
+            toast.style.background = 'rgba(0,0,0,0.85)';
+            toast.style.color = '#fff';
+            toast.style.padding = '10px 20px';
+            toast.style.borderRadius = '20px'; // pill shape
+            toast.style.fontFamily = 'sans-serif';
+            toast.style.fontSize = '0.9rem';
+            toast.style.zIndex = '10000';
+            toast.style.transition = 'opacity 0.3s';
+            toast.style.pointerEvents = 'none';
+            document.body.appendChild(toast);
+        }
+        toast.textContent = message;
+        toast.style.opacity = '1';
+
+        if (this._toastTimeout) clearTimeout(this._toastTimeout);
+        this._toastTimeout = setTimeout(() => {
+            toast.style.opacity = '0';
+        }, duration);
     }
 }

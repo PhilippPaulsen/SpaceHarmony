@@ -448,6 +448,55 @@ export class SymmetryEngine {
       return this._deduplicate(groupTd);
     }
 
+    if (groupName === 'icosahedral') {
+      // Ih (120 elements)
+      const phi = (1 + Math.sqrt(5)) / 2;
+
+      // Use generators from standard reference (e.g. Coxeter)
+      // A common set for Icosahedral Rotation (I, 60 elements):
+      // 1. 2-fold rotation around Z? No, use explicit axes.
+
+      // 5-fold axis through vertex (0, 1, phi) normalized
+      const v5 = new THREE.Vector3(0, 1, phi).normalize();
+
+      // 3-fold axis through face center (1, 1, 1) normalized
+      const v3 = new THREE.Vector3(1, 1, 1).normalize();
+
+      // 2-fold axis through edge center (0, 1, 1/phi)? Or just X/Y/Z 2-folds?
+      // Standard Icosahedron is aligned such that (0, ±1, ±phi) are vertices.
+      // It has 3 orthogonal 2-fold axes along X, Y, Z.
+
+      const r2x = this._rotationMatrix('x', Math.PI);
+      const r2y = this._rotationMatrix('y', Math.PI);
+
+      // To generate full group, we need a 5-fold rotation and mixing.
+
+      // Let's use arbitrary axis rotation helper
+      const rotateAround = (axis, angle) => {
+        const m = new THREE.Matrix4();
+        m.makeRotationAxis(axis, angle);
+        return m;
+      };
+
+      const gen5 = rotateAround(v5, (2 * Math.PI) / 5);
+      const gen3 = rotateAround(v3, (2 * Math.PI) / 3);
+      const gen2 = rotateAround(new THREE.Vector3(1, 0, 0), Math.PI); // X-axis is a 2-fold axis for standard orientation?
+      // Wait, for standard (0,1,phi), X-axis passes through edge midpoints. YES.
+
+      // I = <5, 3, 2>
+      const groupI = this._generateGroupFromGenerators([gen5, gen3, gen2]);
+
+      // For Ih, add inversion
+      const inversion = this.applyInversion();
+      const groupIh = [...groupI];
+      groupI.forEach(m => {
+        groupIh.push(m.clone().multiply(inversion));
+      });
+
+      const result = this._deduplicate(groupIh);
+      return result;
+    }
+
     return matrices;
   }
 
@@ -461,7 +510,7 @@ export class SymmetryEngine {
     let iterations = 0;
 
     // Safety break
-    while (changed && iterations < 12) {
+    while (changed && iterations < 30) {
       changed = false;
       const currentLen = group.length;
       const newFound = [];
@@ -486,6 +535,7 @@ export class SymmetryEngine {
 
       iterations++;
     }
+    console.log(`[SymmetryEngine] Generated group size: ${group.length} (iterations: ${iterations})`);
     return group;
   }
 }

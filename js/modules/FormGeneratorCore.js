@@ -485,6 +485,52 @@ function _validateForm(form) {
 
     // Volume Check (Closed Shells)
     // We pass the detected cycles (faces) to find closed volumes (e.g. Cubes, Tetrahedrons)
+
+    // 3. Detect Pentagons (5-cycles) - Essential for Icosahedral
+    // Iterate points again or re-use logic? Iterating points is safer.
+    // Optimization: Only check if we are in Icosahedral mode? No, geometry is universal.
+    for (let i = 0; i < points.length; i++) {
+        const neighbors = adj.get(i);
+        if (!neighbors) continue;
+
+        // Depth-first search for length 5? Or nested loops?
+        // Nested loops (like before) are rigid but predictable.
+        // A -> B -> C -> D -> E -> A
+
+        // Let's use simplified DFS for specific length to avoid 5-level nesting indentation hell
+        const findPath = (curr, start, depth, path) => {
+            if (depth === 5) {
+                if (adj.get(curr).includes(start)) {
+                    // Found cycle
+                    const cycle = [...path].sort((a, b) => a - b);
+                    const key = cycle.join('-');
+                    if (!cycleSet.has(key)) {
+                        // Check planarity
+                        // Need point vectors
+                        const vecPoints = cycle.map(idx => points[idx]);
+                        if (GeometryUtils.isPlanar(vecPoints, 0.05)) { // Assuming isPlanar accepts array of Vectors
+                            cycleSet.add(key);
+                            cycles.push(cycle);
+                        }
+                    }
+                }
+                return;
+            }
+
+            const neis = adj.get(curr);
+            for (const n of neis) {
+                if (n > start && !path.includes(n)) { // Enforce ordering > start to dedupe rotations, uniques
+                    findPath(n, start, depth + 1, [...path, n]);
+                }
+            }
+        };
+
+        // Trigger search
+        // We only need to find cycles starting at 'i' where 'i' is the smallest index in the cycle to avoid dupes/rotations
+        // findPath enforces n > start
+        findPath(i, i, 1, [i]);
+    }
+
     const volumes = _detectVolumeShells(cycles);
 
     // Connectivity Check (BFS)
