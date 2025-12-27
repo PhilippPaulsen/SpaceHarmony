@@ -462,6 +462,15 @@ function _validateForm(form) {
                     // Does n2 connect to x?
                     if (adj.get(n2).includes(x)) {
                         // Found 4-cycle: i - n1 - x - n2 - i
+
+                        // CHECK FOR GHOST FACE:
+                        // If there is a diagonal connection (i-x or n1-n2), this 4-cycle is actually 2 triangles.
+                        // We should NOT count the outer loop as a face.
+                        const hasDiag1 = adj.get(i).includes(x);
+                        const hasDiag2 = adj.get(n1).includes(n2);
+
+                        if (hasDiag1 || hasDiag2) continue; // Skip composite face
+
                         const cycle = [i, n1, x, n2].sort((a, b) => a - b);
                         const key = cycle.join('-');
                         if (!cycleSet.has(key)) {

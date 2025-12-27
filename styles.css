@@ -575,7 +575,7 @@ output {
 /* Point Density Spacing */
 
 /* Responsive 50/50 Split for Desktop */
-@media (min-width: 1024px) {
+@media (min-width: 1200px) {
   .workspace-grid {
     flex-wrap: nowrap;
     /* Prevent wrapping on large screens */
