@@ -8,7 +8,7 @@ export class InputManager {
         this.callbacks = callbacks; // { onClick: (intersect) => {}, onDrag: () => {} }
 
         this.raycaster = new THREE.Raycaster();
-        this.raycaster.params.Points.threshold = 0.05; // Reduced from 0.3 for precision. Rely on point SIZE instead.
+        this.raycaster.params.Points.threshold = 0.15; // Increased for better hit detection
         this.pointer = new THREE.Vector2();
         this.pointerDown = false;
         this.dragging = false;
@@ -52,10 +52,13 @@ export class InputManager {
         this._updatePointer(event);
         if (this.pointerDown) {
             const distSq = this.pointer.distanceToSquared(this.pointerDownPos);
-            // Increased threshold for easier clicking without accidental drag
-            if (distSq > (CONFIG.DRAG_THRESHOLD_SQ * 2 / (this.sceneManager.renderer.domElement.height ** 2))) {
-                // Scaling threshold to normalized coords is a bit tricky, simpler to assume if moved > X pixels
-                // Let's use simple logic:
+            // Drag detection: Check if pointer moved significantly
+            // NDC coordinates are -1 to 1. Range 2.
+            // 5 pixels on 1000px screen is 5/1000 * 2 = 0.01. 
+            // Squared = 0.0001.
+            const thresholdSq = 0.0001;
+
+            if (distSq > thresholdSq) {
                 this.dragging = true;
             }
         }
