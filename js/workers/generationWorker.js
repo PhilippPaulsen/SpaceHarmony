@@ -9,12 +9,12 @@ import { generateForm } from '../modules/FormGeneratorCore.js';
 
 self.onmessage = function (e) {
     const config = e.data;
-    const { count, minFaces, gridSize, pointDensity, options } = config;
+    const { count, minFaces, minVolumes, gridSize, pointDensity, options } = config;
 
     try {
         const results = [];
         let attempts = 0;
-        const maxAttempts = count * 10; // Avoid infinite loops
+        const maxAttempts = count * 200; // Significantly increased attempts to find rare volumes
 
         while (results.length < count && attempts < maxAttempts) {
             attempts++;
@@ -26,10 +26,11 @@ self.onmessage = function (e) {
             // Since we enforce symmetry now, 4 faces implies a closed 3-space wrapper.
             // If the user manually lowered config.minFaces below 4, we might respect it,
             // but the UI default is now 4.
-            if (form.metadata.faceCount < 4) continue;
+            // if (form.metadata.faceCount < 4) continue; // Relaxed: Let UI control this via minFaces/minVolumes
 
-            // Respect user config if higher
-            if (form.metadata.faceCount < minFaces) continue;
+            // Respect user config if higher or specific
+            if (form.metadata.faceCount < (minFaces || 0)) continue;
+            if (minVolumes > 0 && form.metadata.volumeCount < minVolumes) continue;
 
             // Check 3: Deduplication (Signature)
             const edgeKeys = form.lines.map(l => {

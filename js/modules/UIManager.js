@@ -23,7 +23,7 @@ export class UIManager {
             'translation-axis', 'translation-count', 'translation-step', 'translation-connect',
             'screw-axis', 'screw-angle', 'screw-distance', 'screw-count', 'screw-enabled', 'screw-connect',
             'face-count',
-            'btn-generator', 'generator-modal', 'gen-close', 'gen-start', 'gen-symmetry', 'gen-count', 'gen-minfaces', 'gen-maxedges', 'gen-results', 'gen-status'
+            'btn-generator', 'generator-modal', 'gen-close', 'gen-start', 'gen-symmetry', 'gen-count', 'gen-minfaces', 'gen-minvolumes', 'gen-maxedges', 'gen-results', 'gen-status'
         ];
 
         ids.forEach(id => {
@@ -108,14 +108,17 @@ export class UIManager {
                 if (val === 'platonic') {
                     this._setValue('gen-maxedges', 60); // Sufficient for Icosahedron (30 edges) + some buffer
                     this._setValue('gen-minfaces', 4);
+                    this._setValue('gen-minvolumes', 1);
                     this._setValue('gen-count', 5);
                 } else if (val === 'complex') {
                     this._setValue('gen-maxedges', 120);
                     this._setValue('gen-minfaces', 12);
+                    this._setValue('gen-minvolumes', 1);
                     this._setValue('gen-count', 8);
                 } else if (val === 'organic') {
                     this._setValue('gen-maxedges', 200);
                     this._setValue('gen-minfaces', 20);
+                    this._setValue('gen-minvolumes', 0);
                     this._setValue('gen-count', 3);
                 }
             });
@@ -146,6 +149,7 @@ export class UIManager {
                 symmetryGroup: this._getValue('gen-symmetry'),
                 count: this._getValue('gen-count'),
                 minFaces: this._getValue('gen-minfaces'),
+                minVolumes: this._getValue('gen-minvolumes'),
                 maxEdges: this._getValue('gen-maxedges')
             };
             if (this.callbacks['onGenerate']) this.callbacks['onGenerate'](config);

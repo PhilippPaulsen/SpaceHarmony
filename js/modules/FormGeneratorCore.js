@@ -79,94 +79,11 @@ export function generateForm(gridSize, pointDensity, options = {}) {
     // Attach detected faces (arrays of point indices)
     let faces = validationResults.closedLoops || [];
 
-    // ENFORCE SYMMETRY: If we found faces, ensure the full symmetric set is present.
-    // console.log(`[FormGen] Faces before sym: ${faces.length}`);
-    // FIX: If we used _generateSymmetricForm (pathResult.symmetryInfo exists), the wireframe is ALREADY symmetric.
-    // _validateForm should have found all faces. Applying symmetry matrices again leads to massive duplication (N * GroupSize).
-    // Only apply if we generated an asymmetric path and want to force symmetry on the result.
+    // ENFORCE SYMMETRY: Removed obsolete manual face symmetrization block. 
+    // Symmetry is now guaranteed by _generateSymmetricForm logic.
     if (faces.length > 0 && options.symmetryGroup && !pathResult.symmetryInfo) {
-        try {
-            const symEngine = new SymmetryEngine();
-            const groupKey = options.symmetryGroup;
-            const matrices = symEngine.getGroupMatrices(groupKey);
-
-            if (matrices && matrices.length > 0) {
-                // 1. Build Point Lookup
-                const pointLookup = new Map();
-                form.points.forEach((p, i) => {
-                    const key = GeometryUtils.pointKey(p);
-                    pointLookup.set(key, i);
-                });
-
-                // 2. Symmetrize Faces
-                const uniqueFaceKeys = new Set();
-                const allSymmetricFaces = [];
-                const EPSILON = 0.001; // Tolerance for point matching
-
-                faces.forEach(baseFaceIndices => {
-                    // Convert indices to Vector3s
-                    const faceVerts = baseFaceIndices.map(idx => {
-                        const p = form.points[idx];
-                        return new THREE.Vector3(p.x, p.y, p.z);
-                    });
-
-                    // Apply all symmetries
-                    matrices.forEach(mat => {
-                        // Transform vertices
-                        const transformedVerts = faceVerts.map(v => v.clone().applyMatrix4(mat));
-
-                        // Find matching indices using distance (Robust)
-                        const newIndices = [];
-                        let valid = true;
-
-                        for (let v of transformedVerts) {
-                            // O(1) Lookup
-                            // Round to precision to match key format
-                            // Key format from GeometryUtils: pointKey(v)
-                            // But we need to match local grid points.
-                            // We can use the lookup map.
-                            const k = GeometryUtils.pointKey(v);
-                            const idx = pointLookup.get(k);
-
-                            if (idx !== undefined) {
-                                newIndices.push(idx);
-                            } else {
-                                valid = false;
-                                break;
-                            }
-                        }
-
-                        if (valid) {
-                            // Canonicalize key
-                            const sorted = newIndices.slice().sort((a, b) => a - b);
-                            const faceKey = sorted.join('_');
-
-                            if (!uniqueFaceKeys.has(faceKey)) {
-                                uniqueFaceKeys.add(faceKey);
-                                // Ensure standard winding order (if possible) or just use found indices?
-                                // Winding order might be flipped by reflection.
-                                // For visualization (DoubleSide), it doesn't matter much.
-                                // For volume check (edges), direction A->B vs B->A matters if we check orientation.
-                                // But our current Watertight check ignores orientation (checks edge count).
-                                // CRITICAL: We MUST preserve the cycle order for the face to be valid (A->B->C).
-                                // But 'sorted' destroys topology.
-                                // We need to store 'newIndices' (which maps to transformed A->B->C).
-                                // BUT we use 'sorted' only for the UNIQUE KEY.
-                                // We push 'newIndices' (transformed topological order) to the result.
-                                allSymmetricFaces.push(newIndices);
-                            }
-                        }
-                    });
-                });
-
-                // Replace faces with the full set
-                if (allSymmetricFaces.length > 0) {
-                    faces = allSymmetricFaces;
-                }
-            }
-        } catch (err) {
-            console.warn("Symmetrization failed, using detected faces only:", err);
-        }
+        // Pass - we do not attempt to re-symmetrize a non-symmetric path result here.
+        // If the user wanted symmetry, they should have used mode=maxRegular or provided symmetryGroup to generationOptions.
     }
 
     form.faces = faces;
@@ -218,23 +135,52 @@ function _generateSymmetricForm(gridPoints, options, symmetryEngine) {
         return { points: [], lines: [] };
     }
 
-    // Seed Line
     if (gridPoints.length < 2) return { points: [], lines: [] };
 
-    // Select two distinct random points
-    let idx1 = Math.floor(Math.random() * gridPoints.length);
-    let idx2 = Math.floor(Math.random() * gridPoints.length);
-    let attempts = 0;
-    while (idx1 === idx2 && attempts < 50) {
-        idx2 = Math.floor(Math.random() * gridPoints.length);
-        attempts++;
-    }
-    if (idx1 === idx2) return { points: [], lines: [], symmetryInfo: null };
+    // Seed Path Generation
+    // Allow multi-segment seed to increase chance of incidence
+    // Default to 1-2 segments for simple forms, more for complex if requested
+    const minLen = options.seedMinLength || 1;
+    const maxLen = options.seedMaxLength || 2;
+    const pathLength = minLen + Math.floor(Math.random() * (maxLen - minLen + 1));
 
-    // Initialize points and lines
-    // We clone the points because we might modify them (scaling later) or different forms need distinct instances
-    const points = [gridPoints[idx1].clone(), gridPoints[idx2].clone()];
-    const lines = [new Line(0, 1)];
+    const points = [];
+    const lines = [];
+    const usedIndices = new Set();
+
+    // 1. Pick Start
+    let currentIdx = Math.floor(Math.random() * gridPoints.length);
+    usedIndices.add(currentIdx);
+    points.push(gridPoints[currentIdx].clone());
+
+    // 2. Walk
+    for (let i = 0; i < pathLength; i++) {
+        // Find valid next point (any different point, or restrict to "straight" lines?)
+        // _generateLinePath uses _isStraightLine. Let's use it for cleaner forms.
+        const currentPos = gridPoints[currentIdx];
+        const candidates = [];
+
+        // Optimization: Don't scan ALL points if grid is huge, but it's small (3x3x3=27).
+        for (let j = 0; j < gridPoints.length; j++) {
+            if (j !== currentIdx) { // Allow revisiting used points? Maybe not immediate backtrack.
+                if (_isStraightLine(currentPos, gridPoints[j])) {
+                    candidates.push(j);
+                }
+            }
+        }
+
+        if (candidates.length === 0) break;
+
+        const nextIdx = candidates[Math.floor(Math.random() * candidates.length)];
+
+        points.push(gridPoints[nextIdx].clone());
+        lines.push(new Line(points.length - 2, points.length - 1)); // connect prev to curr
+
+        currentIdx = nextIdx;
+        usedIndices.add(currentIdx);
+    }
+
+    if (lines.length === 0) return { points: [], lines: [], symmetryInfo: null };
 
     // Apply Transformations
     _applySymmetryGroup({ points, lines }, transforms);
@@ -242,7 +188,7 @@ function _generateSymmetricForm(gridPoints, options, symmetryEngine) {
     return {
         points: points,
         lines: lines,
-        symmetryInfo: { type: groupKey, seed: 'randomLine' }
+        symmetryInfo: { type: groupKey, seed: 'randomPath' }
     };
 }
 

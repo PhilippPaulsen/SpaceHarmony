@@ -2,7 +2,9 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.m
 
 export const GeometryUtils = {
     formatCoord(value) {
-        return value.toFixed(5);
+        // Fix negative zero and ensuring precision consistency
+        const rounded = Math.round(value * 100000) / 100000;
+        return (rounded === 0 ? 0 : rounded).toFixed(5);
     },
 
     pointKey(vec) {

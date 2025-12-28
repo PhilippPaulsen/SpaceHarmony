@@ -251,13 +251,19 @@ export class App {
             const workerConfig = {
                 count: config.count || 5,
                 minFaces: config.minFaces || 0,
+                minVolumes: config.minVolumes || 0,
                 gridSize: 3, // Keep internal grid size 3 for generator logic
 
                 pointDensity: (config.symmetryGroup === 'icosahedral') ? Math.max(this.gridDivisions + 1, 4) : (this.gridDivisions + 1), // Force higher density for Icosahedral to ensure nested shells exist
                 options: {
                     mode: config.mode,
                     symmetryGroup: config.symmetryGroup,
-                    maxEdges: config.maxEdges
+                    maxEdges: config.maxEdges,
+                    // Dynamic Heuristic for Seed Length
+                    // If we want Complex (high faces) or specific Volumes, a slightly longer seed path helps.
+                    // But keep it small (1-2) for Platonic to avoid mess.
+                    seedMinLength: (config.minFaces > 10 || config.minVolumes > 0) ? 1 : 1,
+                    seedMaxLength: (config.minFaces > 10) ? 3 : 2
                 }
             };
             this.worker.postMessage(workerConfig);
