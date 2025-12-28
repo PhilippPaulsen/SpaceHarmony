@@ -1123,12 +1123,16 @@ export class App {
 
         const allFaces = [];
 
-        // 1. Add Base Faces (Auto)
+        // 1. Reset Volume Flags
+        this.baseFaces.forEach(f => f._isVolume = false);
+        this.manualFaces.forEach(f => f._isVolume = false);
+
+        // 2. Add Base Faces (Auto)
         this.baseFaces.forEach(f => {
             allFaces.push({ keys: f.keys, original: f });
         });
 
-        // 2. Add Manual Faces
+        // 3. Add Manual Faces
         this.manualFaces.forEach((f, key) => {
             // Convert indices to keys
             const keys = f.indices.map(idx => this.pointKeyLookup.get(idx));
@@ -1137,7 +1141,7 @@ export class App {
             }
         });
 
-        // 1. Build Edge-to-Face Map
+        // 4. Build Edge-to-Face Map
         const edgeToFaces = new Map();
 
         allFaces.forEach((face, fIdx) => {
@@ -1198,7 +1202,7 @@ export class App {
         let volCount = 0;
         console.log(`_updateVolumes: Found ${components.length} face components.`);
         components.forEach(compIndices => {
-            console.log(`_updateVolumes: Component found with ${compIndices.length} faces.`);
+            // console.log(`_updateVolumes: Component found with ${compIndices.length} faces.`);
             if (compIndices.length >= 4) {
                 // Check edge sharing (closedness)
                 // For a proper closed manifold, every edge in the component must appear exactly twice (or even number).
@@ -1207,13 +1211,21 @@ export class App {
                 const faces = compIndices.map(idx => allFaces[idx]);
                 const faceKeys = faces.map(f => f.keys);
 
+                // Use simple heuristic: Connected component >= 4 faces is a "Volume".
+                // We mark the underlying faces as Volume Faces so they render with Volume Material.
+
+                // Mark faces
+                faces.forEach(f => {
+                    if (f.original) f.original._isVolume = true;
+                });
+
                 // Unique Key for Volume
                 const volKey = GeometryUtils.volumeKeyFromKeys(faceKeys);
 
                 this.baseVolumes.push({
                     key: volKey,
                     faceKeys: faceKeys, // Array of face keys
-                    faces: faces,
+                    faces: faces, // Wrapper objects
                     source: 'auto'
                 });
             }
@@ -1373,7 +1385,11 @@ export class App {
         this._addGenerativeGeometry(this.symmetryGroup);
 
 
-        // Render Auto Volumes (baseVolumes) - Same logic, derived from full graph.
+        // Render Auto Volumes (baseVolumes) - DEPRECATED
+        // We do NOT render volumes separately anymore to avoid Z-Fighting.
+        // Faces that are part of a volume are already marked (_isVolume = true)
+        // and are rendered in the loop above with volumeMat.
+        /*
         if (this.showClosedForms) {
             this.baseVolumes.forEach(vol => {
                 if (this.manualVolumes.has(vol.key)) return;
@@ -1383,6 +1399,7 @@ export class App {
                 });
             });
         }
+        */
 
         this.sceneManager.scene.add(this.symmetryGroup);
 
