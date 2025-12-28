@@ -254,7 +254,7 @@ export class App {
                 minVolumes: config.minVolumes || 0,
                 gridSize: 3, // Keep internal grid size 3 for generator logic
 
-                pointDensity: (config.symmetryGroup === 'icosahedral') ? Math.max(this.gridDivisions + 1, 4) : (this.gridDivisions + 1), // Force higher density for Icosahedral to ensure nested shells exist
+                pointDensity: this.gridDivisions + 1, // Respect user density also for Ico
                 options: {
                     mode: config.mode,
                     symmetryGroup: config.symmetryGroup,
@@ -466,7 +466,30 @@ export class App {
         }
 
         // Filter Volumes
-        const validVolumes = components.filter(c => c.length >= 4);
+        // Strict Check: A component is a volume ONLY if it is closed (Watertight).
+        // Rule: Every edge in the component must participate in at least 2 faces of the component.
+        const validVolumes = components.filter(c => {
+            if (c.length < 4) return false;
+
+            // Build edge count map for THIS component
+            const localEdges = new Map();
+            c.forEach(fIdx => {
+                const face = facesArray[fIdx];
+                const indices = face.indices;
+                for (let k = 0; k < indices.length; k++) {
+                    const a = indices[k];
+                    const b = indices[(k + 1) % indices.length];
+                    const key = a < b ? `${a}-${b}` : `${b}-${a}`;
+                    localEdges.set(key, (localEdges.get(key) || 0) + 1);
+                }
+            });
+
+            // If any edge has count < 2, the component has a hole
+            for (const count of localEdges.values()) {
+                if (count < 2) return false;
+            }
+            return true;
+        });
 
         this.manualVolumes.clear();
         validVolumes.forEach((comp, idx) => {
