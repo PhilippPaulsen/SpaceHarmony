@@ -42,7 +42,8 @@ export function generateForm(gridSize, pointDensity, options = {}) {
 
     if (symGroup || mode === 'maxRegular') {
         const groupKey = symGroup || 'cubic';
-        pathResult = _generateSymmetricForm(gridPoints, { symmetryGroup: groupKey }, symmetry);
+        // Pass options to get index for Shell Cycling
+        pathResult = _generateSymmetricForm(gridPoints, { ...options, symmetryGroup: groupKey }, symmetry);
     } else {
         pathResult = _generateLinePath(gridPoints, options);
     }
@@ -51,11 +52,20 @@ export function generateForm(gridSize, pointDensity, options = {}) {
     form.lines = pathResult.lines;
 
     // --- Completion Step (The "Lawful" part) ---
-    // Try to complete the form into closed surfaces/volumes
-    // This mimics the original 'completeSurfacesAndVolumes' logic
-    if (options.completeForm !== false) { // Default to true
-        _completeForm(form, { maxEdges: options.maxEdges || 60 });
-        // console.log(`[FormGen] After complete: P=${form.points.length}, L=${form.lines.length}`);
+    const isSimpleAndLowDensity = (Number(options.minFaces || 0) < 30 && (Number(options.pointDensity || 1) <= 1));
+
+    if (options.completeForm !== false) {
+        const completionOpts = { maxEdges: options.maxEdges || 60 };
+
+        // Universal Smart Constraint
+        // We ALWAYS enforce the Shell Distance if available.
+        // This ensures that even in Complex Mode, we generate consistent "Crystalline" structures
+        // rather than organic hairballs. This matches "All possible node connections" (systematic).
+        if (pathResult && pathResult.symmetryInfo && pathResult.symmetryInfo.distSq) {
+            completionOpts.allowedDistSq = pathResult.symmetryInfo.distSq;
+        }
+
+        _completeForm(form, completionOpts);
     }
 
     // --- Scaling to SpaceHarmony System (Target Grid Size 3) ---
@@ -74,6 +84,7 @@ export function generateForm(gridSize, pointDensity, options = {}) {
     if (pathResult.symmetryInfo) {
         validationResults.symmetryProperties = pathResult.symmetryInfo.type;
         validationResults.seedShape = pathResult.symmetryInfo.seed;
+        validationResults.debugP = pathResult.symmetryInfo.debugP; // Pass debugP to metadata
     }
 
     // Attach detected faces (arrays of point indices)
@@ -89,7 +100,7 @@ export function generateForm(gridSize, pointDensity, options = {}) {
     form.faces = faces;
 
     // Store metadata
-    form.metadata = _generateMetaData(form, { gridSize, pointDensity, ...options }, validationResults);
+    form.metadata = _generateMetaData(form, { gridSize, pointDensity, ...options }, validationResults, isSimpleAndLowDensity);
     form.metadata.coordinateSystem = "raumharmonik";
     form.metadata.scaledTo = `gridSize${targetGridSize}`;
 
@@ -98,17 +109,19 @@ export function generateForm(gridSize, pointDensity, options = {}) {
     return form;
 }
 
-function _generateMetaData(form, options, validationResults) {
+function _generateMetaData(form, options, validationResults, isSimpleAndLowDensity) {
     const id = options.id || Date.now();
     let sourceName = "Random Generator v2.0";
     if (validationResults.symmetryProperties) {
         sourceName = "Symmetric Generator";
     }
     const notes = `Start: ${validationResults.seedShape || 'N/A'}, Group: ${validationResults.symmetryProperties || 'None'}`;
+    const debugP = validationResults.debugP || '?';
+    const debugStr = (validationResults.debugStrategy === 'strict') ? 'STRICT' : 'RLX';
 
     return {
         "id": id,
-        "name": `SH_Form_${id}`,
+        "name": `Form #${options.index !== undefined ? options.index + 1 : id} [${debugStr}-P${debugP}-${isSimpleAndLowDensity ? 'SMPL' : 'CPLX'}]`,
         "generatedAt": new Date().toISOString(),
         "gridSize": options.gridSize,
         "pointDensity": options.pointDensity - 1,
@@ -148,23 +161,81 @@ function _generateSymmetricForm(gridPoints, options, symmetryEngine) {
     const lines = [];
     const usedIndices = new Set();
 
+    if (gridPoints.length < 2) return { points: [], lines: [] };
+
     // 1. Pick Start
     let currentIdx = Math.floor(Math.random() * gridPoints.length);
     usedIndices.add(currentIdx);
     points.push(gridPoints[currentIdx].clone());
 
-    // 2. Walk
+    // Strategy: Universal Shell Selector
+    // We select ONE shell based on the index.
+    // We force the random walk to use ONLY that edge length.
+    // This finding strategy works for Simple forms (Platonic) AND Complex forms (Stars, Inter-shell connections).
+    // Because symmetry preserves distance, a path of constant edge length is highly likely to close into a symmetric orbit (Polyhedron).
+
+    // Strategy: Hybrid Discovery
+    // 1. Analyze Distances (Shells)
+    const shells = new Map();
+    const startP = gridPoints[currentIdx];
+
+    for (let k = 0; k < gridPoints.length; k++) {
+        if (k === currentIdx) continue;
+        const d = startP.distanceToSquared(gridPoints[k]);
+        if (d < 0.0001) continue;
+        let found = false;
+        for (let key of shells.keys()) {
+            if (Math.abs(key - d) < 0.01) { shells.get(key).push(k); found = true; break; }
+        }
+        if (!found) shells.set(d, [k]);
+    }
+
+    const sortedShells = Array.from(shells.entries()).sort((a, b) => a[0] - b[0]);
+    const totalShells = sortedShells.length;
+
+    // 2. Decide Strategy based on Index
+    // Phase 1: Exhaust Strict Shells (Perfect Solids)
+    // Phase 2: Relaxed/Mixed Shells (Complex/Organic Forms)
+    const requestedIndex = options.index || 0;
+
+    // Force Relaxed Mode FAST.
+    // Index 0, 1, 2 = Strict (Find the ~3 Perfect Solids).
+    // Index 3+ = Relaxed (Find Variants).
+    // This prevents "Stuck in Solids" loop.
+    const useStrict = requestedIndex < 3;
+
+    let targetDistSq = 0;
+    let shellIndex = -1;
+
+    if (useStrict) {
+        shellIndex = requestedIndex % totalShells;
+        const target = sortedShells[shellIndex];
+        targetDistSq = target ? target[0] : 0;
+    }
+
+    // 3. Walk
     for (let i = 0; i < pathLength; i++) {
-        // Find valid next point (any different point, or restrict to "straight" lines?)
-        // _generateLinePath uses _isStraightLine. Let's use it for cleaner forms.
         const currentPos = gridPoints[currentIdx];
         const candidates = [];
 
-        // Optimization: Don't scan ALL points if grid is huge, but it's small (3x3x3=27).
         for (let j = 0; j < gridPoints.length; j++) {
-            if (j !== currentIdx) { // Allow revisiting used points? Maybe not immediate backtrack.
-                if (_isStraightLine(currentPos, gridPoints[j])) {
-                    candidates.push(j);
+            if (j !== currentIdx) {
+                const d = currentPos.distanceToSquared(gridPoints[j]);
+
+                if (useStrict) {
+                    // Strict Shell Constraint
+                    if (Math.abs(d - targetDistSq) < 0.01) {
+                        candidates.push(j);
+                    }
+                } else {
+                    // Relaxed Constraint (Phase 2)
+                    // Allow ANY connection within a reasonable max radius (e.g. 1.5x max shell?)
+                    // Or just any shell? 
+                    // Let's filter slightly to avoid cross-grid chaos lines, but allow mixing shells.
+                    // Actually, just allowing any neighbor in the 'shells' map is good.
+                    if (d < 4.0) { // Arbitrary large constraint
+                        candidates.push(j);
+                    }
                 }
             }
         }
@@ -172,9 +243,10 @@ function _generateSymmetricForm(gridPoints, options, symmetryEngine) {
         if (candidates.length === 0) break;
 
         const nextIdx = candidates[Math.floor(Math.random() * candidates.length)];
+        const nextPoint = gridPoints[nextIdx];
 
-        points.push(gridPoints[nextIdx].clone());
-        lines.push(new Line(points.length - 2, points.length - 1)); // connect prev to curr
+        points.push(nextPoint.clone());
+        lines.push(new Line(i, i + 1));
 
         currentIdx = nextIdx;
         usedIndices.add(currentIdx);
@@ -188,7 +260,15 @@ function _generateSymmetricForm(gridPoints, options, symmetryEngine) {
     return {
         points: points,
         lines: lines,
-        symmetryInfo: { type: groupKey, seed: 'randomPath' }
+        symmetryInfo: {
+            type: options.symmetryGroup,
+            seed: 'random-walk',
+            strategy: useStrict ? 'strict' : 'relaxed',
+            shell: shellIndex,
+            distSq: useStrict ? targetDistSq : null, // Pass distSq ONLY if strict
+            debugP: gridPoints.length,
+            debugS: totalShells
+        }
     };
 }
 
@@ -200,22 +280,25 @@ function _applySymmetryGroup(formObj, matrices) {
     const initialLines = [...formObj.lines];
     const initialPoints = formObj.points;
 
-    // Map to track unique points: key -> newIndex
-    const pointMap = new Map();
-    const getKey = (p) => GeometryUtils.pointKey(p);
+    // Robust Merge: Use distance check instead of string keys
+    // Critical for Icosahedral floats
+    const EPSILON_SQ = 0.001 * 0.001;
 
-    // Register initial points
-    initialPoints.forEach((p, i) => {
-        pointMap.set(getKey(p), i);
-    });
+    const findPointIndex = (p) => {
+        for (let i = 0; i < formObj.points.length; i++) {
+            if (formObj.points[i].distanceToSquared(p) < EPSILON_SQ) {
+                return i;
+            }
+        }
+        return -1;
+    };
 
     const findOrCreatePoint = (p) => {
-        const key = getKey(p);
-        if (pointMap.has(key)) return pointMap.get(key);
+        const idx = findPointIndex(p);
+        if (idx !== -1) return idx;
 
         const newIndex = formObj.points.length;
         formObj.points.push(p.clone());
-        pointMap.set(key, newIndex);
         return newIndex;
     };
 
@@ -254,93 +337,84 @@ function _defineGrid(gridSize, pointDensity, options = {}) {
     const half = (gridSize - 1) / 2;
     if (pointDensity < 1) pointDensity = 1;
 
-    // 1. Standard Cartesian Grid
-    const steps = [];
-    if (pointDensity === 1) {
-        steps.push(0);
-    } else {
-        for (let i = 0; i < pointDensity; i++) {
-            steps.push(-half + i * (gridSize - 1) / (pointDensity - 1));
+    const symGroup = options.symmetryGroup || (options.generationOptions && options.generationOptions.symmetryGroup);
+
+    if (symGroup === 'icosahedral') {
+        const minF = Number(options.minFaces || 0);
+        // "Simple Mode" only applies if Density is 1 (Standard Platonic).
+        // If Density > 1, we want variety/complex forms regardless of face count setting.
+        const isSimple = (minF < 30 && pointDensity <= 1);
+
+        // Alternate Grid Base Type for Simple Mode Variety
+        const idx = options.index || 0;
+        const useDodeca = isSimple && (idx % 2 !== 0);
+
+        const phi = (1 + Math.sqrt(5)) / 2;
+        const radius = (half > 0 ? half : 1.0);
+
+        const addPoints = (vectors, scaleMultiplier = 1.0) => {
+            vectors.forEach(v => {
+                const p = v.clone().normalize().multiplyScalar(radius * scaleMultiplier);
+                let exists = false;
+                for (let existing of points) {
+                    if (existing.distanceToSquared(p) < 0.0001) { exists = true; break; }
+                }
+                if (!exists) points.push(p);
+            });
+        };
+
+        const icoRaw = [
+            new THREE.Vector3(0, 1, phi), new THREE.Vector3(0, 1, -phi), new THREE.Vector3(0, -1, phi), new THREE.Vector3(0, -1, -phi),
+            new THREE.Vector3(1, phi, 0), new THREE.Vector3(1, -phi, 0), new THREE.Vector3(-1, phi, 0), new THREE.Vector3(-1, -phi, 0),
+            new THREE.Vector3(phi, 0, 1), new THREE.Vector3(phi, 0, -1), new THREE.Vector3(-phi, 0, 1), new THREE.Vector3(-phi, 0, -1)
+        ];
+
+        const one_phi = 1 / phi;
+        const recRaw = [
+            new THREE.Vector3(0, one_phi, phi), new THREE.Vector3(0, one_phi, -phi), new THREE.Vector3(0, -one_phi, phi), new THREE.Vector3(0, -one_phi, -phi),
+            new THREE.Vector3(one_phi, phi, 0), new THREE.Vector3(one_phi, -phi, 0), new THREE.Vector3(-one_phi, phi, 0), new THREE.Vector3(-one_phi, -phi, 0),
+            new THREE.Vector3(phi, 0, one_phi), new THREE.Vector3(phi, 0, -one_phi), new THREE.Vector3(-phi, 0, one_phi), new THREE.Vector3(-phi, 0, -one_phi)
+        ];
+        const cubeRaw = [];
+        for (let x of [-1, 1]) for (let y of [-1, 1]) for (let z of [-1, 1]) cubeRaw.push(new THREE.Vector3(x, y, z));
+        const dodRaw = [...recRaw, ...cubeRaw];
+
+        // CONCENTRIC SHELL GENERATION
+        const density = Math.max(1, pointDensity);
+
+        for (let i = 1; i <= density; i++) {
+            const s = i / density;
+
+            if (isSimple) {
+                if (useDodeca) {
+                    addPoints(dodRaw, s);
+                } else {
+                    addPoints(icoRaw, s);
+                }
+            } else {
+                // Complex/High Density: MIX THEM!
+                // Add Ico
+                addPoints(icoRaw, s);
+                // Add Dodeca explicitly to encourage cross-connections
+                addPoints(dodRaw, s);
+            }
         }
-    }
 
-    // Add Cartesian points
-    for (const x of steps) {
-        for (const y of steps) {
-            for (const z of steps) {
-                points.push(new THREE.Vector3(x, y, z));
-                // 2. Inject Icosahedral Symmetry Points (Golden Ratio)
-                // If we are in Icosahedral mode, we replace the Cartesian grid entirely with the Smart Grid.
-                // Standard Cartesian points (unless they are the cube corners) create chaos under 5-fold symmetry.
+    } else {
+        // 2. Standard Cartesian Grid (Default)
+        const steps = [];
+        if (pointDensity === 1) {
+            steps.push(0);
+        } else {
+            for (let i = 0; i < pointDensity; i++) {
+                steps.push(-half + i * (gridSize - 1) / (pointDensity - 1));
+            }
+        }
 
-                const symGroup = options.symmetryGroup || (options.generationOptions && options.generationOptions.symmetryGroup);
-
-                if (symGroup === 'icosahedral') {
-                    // Clear any points generated by the Cartesian step above (or skip it? cleaner to clear or return here).
-                    // Let's reset points to empty to be safe and exclusive.
-                    points.length = 0;
-
-                    const phi = (1 + Math.sqrt(5)) / 2; // Golden Ratio ~1.618
-
-                    // Match GridSystem.js logic:
-                    // Points are normalized to a sphere of radius 'half'.
-                    // When global scaleFactor (0.5) is applied, they land at radius 0.5.
-                    const radius = (half > 0 ? half : 1.0);
-
-                    // Raw Icosahedron Vertices (0, ±1, ±phi)
-                    const icoRaw = [
-                        new THREE.Vector3(0, 1, phi), new THREE.Vector3(0, 1, -phi), new THREE.Vector3(0, -1, phi), new THREE.Vector3(0, -1, -phi),
-                        new THREE.Vector3(1, phi, 0), new THREE.Vector3(1, -phi, 0), new THREE.Vector3(-1, phi, 0), new THREE.Vector3(-1, -phi, 0),
-                        new THREE.Vector3(phi, 0, 1), new THREE.Vector3(phi, 0, -1), new THREE.Vector3(-phi, 0, 1), new THREE.Vector3(-phi, 0, -1)
-                    ];
-
-                    const addPoints = (vectors, scaleMultiplier = 1.0) => {
-                        vectors.forEach(v => {
-                            // Normalize and scale to grid radius
-                            const p = v.clone().normalize().multiplyScalar(radius * scaleMultiplier);
-
-                            // Deduplicate
-                            let exists = false;
-                            for (let existing of points) {
-                                if (existing.distanceToSquared(p) < 0.0001) { exists = true; break; }
-                            }
-                            if (!exists) points.push(p);
-                        });
-                    };
-
-                    // 1. Always add Icosahedron
-                    addPoints(icoRaw);
-
-                    // 2. Add Dodecahedron if Density > 2 (GridDivisions >= 2)
-                    // Density 1 (Div 1) -> Pts 2.
-                    // Density 2 (Div 2) -> Pts 3.
-                    // Let's include Dodeca starting at Density 3 (Div 2) to keep Density 1 very clean.
-                    // Wait, UI Density 1 -> code pointDensity 2.
-                    // UI Density 2 -> code pointDensity 3.
-                    if (pointDensity > 2) {
-                        // Dodecahedron Vertices
-                        const one_phi = 1 / phi;
-                        // (0, ±1/phi, ±phi)
-                        const recRaw = [
-                            new THREE.Vector3(0, one_phi, phi), new THREE.Vector3(0, one_phi, -phi), new THREE.Vector3(0, -one_phi, phi), new THREE.Vector3(0, -one_phi, -phi),
-                            new THREE.Vector3(one_phi, phi, 0), new THREE.Vector3(one_phi, -phi, 0), new THREE.Vector3(-one_phi, phi, 0), new THREE.Vector3(-one_phi, -phi, 0),
-                            new THREE.Vector3(phi, 0, one_phi), new THREE.Vector3(phi, 0, -one_phi), new THREE.Vector3(-phi, 0, one_phi), new THREE.Vector3(-phi, 0, -one_phi)
-                        ];
-                        // Cube Vertices (±1, ±1, ±1)
-                        const cubeRaw = [];
-                        for (let x of [-1, 1]) for (let y of [-1, 1]) for (let z of [-1, 1]) cubeRaw.push(new THREE.Vector3(x, y, z));
-
-                        const dodRaw = [...recRaw, ...cubeRaw];
-
-                        addPoints(dodRaw, 0.85); // Fit inside
-                        // addPoints(dodRaw, 1.0); // Align corners? Maybe noise. Let's stick to GridSystem logic (0.85).
-                        // Actually, if we want them to find the Corner-aligned form, we need Dodeca at 1.0.
-                        // But user complained about "Breaking Frame".
-                        // Frame usually visualizes the 0.85 Dodeca (if density=2)? 
-                        // Or the Cube Framework?
-                        // If we omit 1.0 Dodeca, we never find the form connecting cube corners perfectly.
-                        // Let's respect "Breaking Frame" and only add inside ones for now.
-                    }
+        for (const x of steps) {
+            for (const y of steps) {
+                for (const z of steps) {
+                    points.push(new THREE.Vector3(x, y, z));
                 }
             }
         }
@@ -714,9 +788,17 @@ function _completeForm(form, options = {}) {
     });
 
     const addLine = (a, b) => {
+        if (form.lines.length >= maxEdges) return false;
+
+        // Shell Constraint
+        if (options.allowedDistSq) {
+            const distSq = form.points[a].distanceToSquared(form.points[b]);
+            // Tolerance 0.1 (squared) covers minor float drift but excludes different edge types
+            if (Math.abs(distSq - options.allowedDistSq) > 0.1) return false;
+        }
+
         const key = getLineKey(a, b);
         if (lineSet.has(key)) return false;
-        if (form.lines.length >= maxEdges) return false;
 
         lineSet.add(key);
         form.lines.push(new Line(a, b));

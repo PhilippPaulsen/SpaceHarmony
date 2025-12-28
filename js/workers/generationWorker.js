@@ -18,63 +18,45 @@ self.onmessage = function (e) {
 
         while (results.length < count && attempts < maxAttempts) {
             attempts++;
-            const form = generateForm(gridSize, pointDensity, options);
+            // Pass index in options to drive the deterministic/hybrid strategy
+            const currentOptions = { ...options, index: results.length };
+            const form = generateForm(gridSize, pointDensity, currentOptions);
 
             // Deduplication & Filtering Logic
-            // 2. Strict Volume Filter (User Request: "Only Body Forms")
-            // We interpret "Body Form" as having at least 4 known faces (Tetrahedron).
-            // Since we enforce symmetry now, 4 faces implies a closed 3-space wrapper.
-            // If the user manually lowered config.minFaces below 4, we might respect it,
-            // but the UI default is now 4.
-            // if (form.metadata.faceCount < 4) continue; // Relaxed: Let UI control this via minFaces/minVolumes
 
-            // Respect user config if higher or specific
+            // 1. Face Count Filter (User Request)
             if (form.metadata.faceCount < (minFaces || 0)) continue;
+
+            // 2. Volume Count Filter (User Request)
             if (minVolumes > 0 && form.metadata.volumeCount < minVolumes) continue;
 
-            // Check 3: Deduplication (Signature)
+            // 3. Deduplication (Signature)
+            // DISABLED for variety (Visual Variants allowed).
+            // We want "50 Forms", not just "The 2 Unique Mathematical Solids".
+            /* 
             const edgeKeys = form.lines.map(l => {
-                const a = l.a;
-                const b = l.b;
-                return a < b ? `${a}-${b}` : `${b}-${a}`;
+                const a = l.a; const b = l.b; return a < b ? `${a}-${b}` : `${b}-${a}`;
             });
             edgeKeys.sort();
-            // Include symmetry in signature to distinguish same shape with different internal symmetry properties? 
-            // Actually, visuals are determined by geometry.
             const signature = edgeKeys.join('|');
+            // Check usage... (disabled)
+            */
 
-            if (results.some(r => {
-                // Check if signature matches any existing result
-                // We need to re-construct signature from result
-                const rKeys = r.lines.map(l => {
-                    const a = l.a; const b = l.b; return a < b ? `${a}-${b}` : `${b}-${a}`;
-                });
-                rKeys.sort();
-                return rKeys.join('|') === signature;
-            })) {
-                continue;
-            }
+            results.push({
+                points: form.points.map(p => ({ x: p.x, y: p.y, z: p.z })),
+                lines: form.lines,
+                faces: form.faces, // IDs array
+                metadata: form.metadata
+            });
 
-            if (true) { // Replaced original if condition
-                // FormGeneratorCore returns clean objects with Vector3s and Line objects {a,b}.
-                // We construct a safe object to transfer.
-                // explicitly map points to ensure no methods are attached (though structured clone handles basic objects fine)
-                // lines are just {a,b} objects from class Line, which is also fine.
-
-                const safeForm = {
-                    points: form.points.map(p => ({ x: p.x, y: p.y, z: p.z })),
-                    lines: form.lines.map(l => ({ a: l.a, b: l.b })),
-                    faces: form.faces, // IDs array
-                    metadata: form.metadata
-                };
-
-                results.push(safeForm);
-
+            // Report progress periodically
+            if (results.length % 5 === 0) {
                 self.postMessage({ type: 'progress', current: results.length, total: count });
             }
         }
 
         self.postMessage({ type: 'success', results: results });
+
     } catch (error) {
         self.postMessage({ type: 'error', message: error.message });
     }
