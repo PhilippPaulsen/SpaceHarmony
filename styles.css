@@ -518,10 +518,9 @@ output {
   }
 
   /* Modal Styles */
-  .modal {
-    display: flex !important;
-    /* Force flex when shown (but handled by JS toggle) */
-  }
+  /* Modal Styles */
+  /* .modal { display: flex !important; } Removed to fix bug where modal overrides hidden state */
+
 
   .modal-content {
     background: var(--surface-strong);

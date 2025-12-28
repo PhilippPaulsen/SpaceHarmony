@@ -91,13 +91,13 @@ export class App {
             face: new THREE.MeshPhongMaterial({
                 color: 0x888888, // Darker gray
                 transparent: true, opacity: 0.60,
-                side: THREE.DoubleSide, depthWrite: false, flatShading: true,
+                side: THREE.DoubleSide, depthWrite: true, flatShading: true,
                 shininess: 80, specular: 0x888888 // Higher shininess + stronger specular for "chiselled" look
             }),
             volume: new THREE.MeshPhongMaterial({
                 color: 0x666666, // Even darker for volumes
                 transparent: true, opacity: 0.70,
-                side: THREE.DoubleSide, depthWrite: false, flatShading: true,
+                side: THREE.DoubleSide, depthWrite: true, flatShading: true,
                 shininess: 100, specular: 0xaaaaaa
             }),
             traceLine: new THREE.LineBasicMaterial({
