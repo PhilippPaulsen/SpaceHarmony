@@ -125,6 +125,16 @@ body::before {
   gap: 16px;
 }
 
+.view-controls {
+  display: flex;
+  gap: 4px;
+  margin-left: 12px;
+  margin-right: 12px;
+  border-left: 1px solid var(--border);
+  padding-left: 12px;
+  align-items: center;
+}
+
 .card-title {
   display: flex;
   align-items: center;
@@ -499,6 +509,12 @@ output {
 }
 
 @media (max-width: 480px) {
+  .view-controls {
+    margin-left: 8px;
+    margin-right: 8px;
+    padding-left: 8px;
+  }
+
   .brand-icon {
     width: 42px;
     height: 42px;

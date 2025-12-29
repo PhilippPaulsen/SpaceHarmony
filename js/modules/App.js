@@ -142,7 +142,10 @@ export class App {
             onImportJSON: () => this._importJSON(),
             onRandomForm: () => this._randomForm(),
             onGenerate: (config) => this.generateForms(config),
-            onLoadResult: (res) => this.loadGeneratedForm(res)
+            onLoadResult: (res) => this.loadGeneratedForm(res),
+            onViewZ: () => this.sceneManager.setView('z'),
+            onViewIso: () => this.sceneManager.setView('iso'),
+            onViewOverview: () => this.sceneManager.setView('overview')
         });
 
         this._updateGridDensity(1);

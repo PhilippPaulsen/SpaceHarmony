@@ -12,6 +12,7 @@ export class UIManager {
         const ids = [
             'theme-toggle',
             'undo-button', 'redo-button', 'clear-button', 'random-form-button',
+            'view-z', 'view-iso', 'view-overview',
             'import-json-button', 'export-json-button', 'export-obj-button', 'export-png-button',
             'grid-density', 'toggle-auto-rotate', 'coord-system',
             'toggle-points', 'toggle-lines', 'toggle-show-closed', 'toggle-cube-frame',
@@ -42,6 +43,9 @@ export class UIManager {
         this._bindClick('redo-button', 'onRedo');
         this._bindClick('clear-button', 'onClear');
         this._bindClick('random-form-button', 'onRandomForm');
+        this._bindClick('view-z', 'onViewZ');
+        this._bindClick('view-iso', 'onViewIso');
+        this._bindClick('view-overview', 'onViewOverview');
 
         // Import/Export
         this._bindClick('import-json-button', 'onImportJSON');
@@ -71,7 +75,7 @@ export class UIManager {
         this._bindChange('toggle-show-closed', 'onToggleShowClosed');
         this._bindChange('toggle-auto-close', 'onToggleAutoClose');
         this._bindChange('toggle-color-highlights', 'onToggleColorHighlights');
-        this._bindClick('toggle-auto-rotate', 'onToggleAutoRotate');
+        this._bindClick('toggle-auto-rotate', 'onToggleAutoRotate'); // Now in Header
 
         // Symmetry
         this._bindChange('reflection-xy', 'onSymmetryChange');

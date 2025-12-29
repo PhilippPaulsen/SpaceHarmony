@@ -213,6 +213,33 @@ export class SceneManager {
         this.renderer.render(this.scene, this.camera);
     }
 
+    setView(type) {
+        this.toggleAutoRotate(false);
+
+        if (type === 'z') {
+            // Front/Top View (looking at XY plane from Z)
+            this.camera.position.set(0, 0, 3.1);
+            this.camera.lookAt(0, 0, 0);
+            this.camera.up.set(0, 1, 0);
+        } else if (type === 'iso') {
+            // Isometric Perspective
+            this.camera.position.set(1.8, 1.8, 1.8);
+            this.camera.lookAt(0, 0, 0);
+            this.camera.up.set(0, 1, 0);
+        } else if (type === 'overview') {
+            // "Optimal Overview" (Dimetric-like)
+            // Asymmetric: Rotated ~10deg relative to previous state (Form turned left)
+            this.camera.position.set(3.1, 1.2, 1.4);
+            this.camera.lookAt(0, 0, 0);
+            this.camera.up.set(0, 1, 0);
+        }
+
+        this.camera.updateProjectionMatrix();
+        this.controls.update();
+
+        // Dispatch optional callback if needed, but SceneManager is low level.
+    }
+
     toggleAutoRotate(enabled) {
         if (this.controls) {
             this.controls.autoRotate = (enabled !== undefined) ? enabled : !this.controls.autoRotate;

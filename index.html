@@ -32,6 +32,24 @@
           </div>
           <div class="card-actions">
             <span class="canvas-status" id="face-count">Faces: 0 | Volumes: 0</span>
+
+            <div class="view-controls">
+              <button type="button" id="view-z" class="icon-button" title="View Front (Z)" aria-label="View Z">
+                <span class="material-icons-outlined">crop_square</span>
+              </button>
+              <button type="button" id="view-iso" class="icon-button" title="View Perspective (Iso)"
+                aria-label="View Perspective">
+                <span class="material-icons-outlined">view_in_ar</span>
+              </button>
+              <button type="button" id="view-overview" class="icon-button" title="Optimal Overview"
+                aria-label="Optimal Overview">
+                <span class="material-icons-outlined">visibility</span>
+              </button>
+              <button type="button" id="toggle-auto-rotate" class="icon-button" title="Auto Rotate"
+                aria-label="Auto Rotate">
+                <span class="material-icons-outlined">360</span>
+              </button>
+            </div>
             <button type="button" id="theme-toggle" class="icon-button" data-i18n-title="ui.theme.toggle"
               title="Toggle Theme" aria-label="Toggle Color Scheme">
               <span class="material-icons-outlined" aria-hidden="true">dark_mode</span>
@@ -96,10 +114,6 @@
               <span class="control-label" data-i18n="ui.density">Point Density</span>
               <div style="display:flex; align-items:center; gap:8px;">
                 <input type="number" id="grid-density" class="number-input" min="1" max="12" step="1" value="1" />
-                <button type="button" id="toggle-auto-rotate" class="icon-button small" title="Auto Rotate"
-                  aria-label="Auto Rotate" style="width:30px; height:30px;">
-                  <span class="material-icons-outlined" style="font-size:18px;">360</span>
-                </button>
               </div>
             </div>
             <div class="toggle-grid">
