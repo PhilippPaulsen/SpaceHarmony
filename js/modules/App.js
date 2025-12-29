@@ -1267,10 +1267,14 @@ export class App {
         this.materials.line.color.setHex(isDark ? 0xffffff : 0x000000);
 
         // 2. Face
-        this.materials.face.color.setHex(isDark ? 0x444444 : 0xbbbbbb);
+        this.materials.face.color.setHex(isDark ? 0x444444 : 0x999999);
+        this.materials.face.specular.setHex(isDark ? 0x888888 : 0x111111);
+        this.materials.face.shininess = isDark ? 80 : 30;
 
         // 3. Volume
-        this.materials.volume.color.setHex(isDark ? 0x555555 : 0x888888);
+        this.materials.volume.color.setHex(isDark ? 0x555555 : 0x777777);
+        this.materials.volume.specular.setHex(isDark ? 0xaaaaaa : 0x222222);
+        this.materials.volume.shininess = isDark ? 100 : 30;
 
         // 4. Trace Line (Add Glow in Dark Mode)
         this.materials.traceLine.color.setHex(isDark ? 0x888888 : 0x666666);
