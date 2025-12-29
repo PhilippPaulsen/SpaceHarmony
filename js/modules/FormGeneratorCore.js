@@ -44,7 +44,7 @@ export function generateForm(gridSize, pointDensity, options = {}) {
 
     // New Systematic Mode
     if (mode === 'systematic') {
-        return _generateSystematicConvex(gridSize, pointDensity, options);
+        return _generateSystematic(gridSize, pointDensity, options);
     }
 
     if (symGroup || mode === 'maxRegular') {
@@ -280,14 +280,14 @@ function _generateSymmetricForm(gridPoints, options, symmetryEngine) {
 }
 
 /**
- * NEW: Systematic Generation of Convex Symmetric Forms
+ * NEW: Systematic Generation of Symmetric Forms (Generalized)
  * 
  * 1. Enumerates all unique connection pairs in P(n).
  * 2. Generates edge orbit under full symmetry.
- * 3. Computes Convex Hull.
+ * 3. Detects Faces (Cycles) directly from the wireframe (allowing Stars/Planes).
  * 4. Filters duplicates via Taxonomy.
  */
-function _generateSystematicConvex(gridSize, pointDensity, options) {
+function _generateSystematic(gridSize, pointDensity, options) {
     const symmetry = new SymmetryEngine();
     const matrices = symmetry.getSymmetryGroup('cubic'); // Full Octahedral
 
@@ -319,77 +319,195 @@ function _generateSystematicConvex(gridSize, pointDensity, options) {
             }
         }
     }
-}
 
-// Sort pairs to strictly define "Form #1, #2..."
-// Sort by Length, then coordinates
-pairs.sort((a, b) => {
-    const d = a.distSq - b.distSq;
-    if (Math.abs(d) > 0.001) return d;
-    return a.key.localeCompare(b.key);
-});
+    // Sort pairs to strictly define "Form #1, #2..."
+    // Sort by Length, then coordinates
+    pairs.sort((a, b) => {
+        const d = a.distSq - b.distSq;
+        if (Math.abs(d) > 0.001) return d;
+        return a.key.localeCompare(b.key);
+    });
 
-const targetPair = pairs[options.index || 0];
+    const targetPair = pairs[options.index || 0];
 
-const form = new Form();
-if (!targetPair) {
-    // Out of bounds - Stop generation
-    form.metadata = { exhausted: true };
-    return form;
-}
+    const form = new Form();
+    if (!targetPair) {
+        // Out of bounds - Stop generation
+        form.metadata = { exhausted: true };
+        return form;
+    }
 
-// 3. Generate Full Edge Orbit
-const startLine = { points: [targetPair.p1, targetPair.p2], lines: [new Line(0, 1)] };
-// Create temp form structure for symmetry engine
-const tempForm = { points: [targetPair.p1, targetPair.p2], lines: [new Line(0, 1)] };
+    // 3. Generate Full Edge Orbit
+    const startLine = { points: [targetPair.p1, targetPair.p2], lines: [new Line(0, 1)] };
+    // Create temp form structure for symmetry engine
+    const tempForm = { points: [targetPair.p1, targetPair.p2], lines: [new Line(0, 1)] };
 
-// Use custom apply to get all edges
-_applySymmetryGroup(tempForm, matrices);
+    // Use custom apply to get all edges
+    _applySymmetryGroup(tempForm, matrices);
 
-// 4. Compute Convex Hull
-// Gather all vertices
-const hullInput = tempForm.points;
-const hull = new ConvexHull(hullInput);
-const hullResult = hull.generate();
-
-if (!hullResult) {
-    // Degenerate (Line/Plane)
-    // Return linear form? User said "Degenerate cases ... as 'kein Körper'".
-    // We return empty or the wireframe?
-    // Let's return the wireframe of the symmetry orbit (Lines) but NO FACES.
+    // 4. GENERALIZED FACE DETECTION (Replaces Convex Hull)
+    // We now have a symmetric wireframe. We need to find the faces (cycles).
     form.points = tempForm.points;
     form.lines = tempForm.lines;
-    form.metadata = { isClosed: false, note: "Degenerate/Planar" };
+
+    // Use internal validation to find cycles (Triangles, Squares, Pentagons)
+    // strict=false? We want to find ALL valid planar loops.
+    // _validateForm logic finds 3, 4, 5 cycles and checks planarity.
+    // This is perfect for Stars and Planes.
+    const validation = _validateForm(form);
+    const rawFaces = validation.closedLoops || [];
+
+    // FILTER: Remove distinct "Internal" faces that are occluded on both sides.
+    // This removes "Hallucinated" cross-sections (like the squares inside an octahedron)
+    // while keeping Open Surfaces and Star Spikes.
+    const filteredFaces = _filterInternalFaces(rawFaces, form.points);
+    form.faces = filteredFaces;
+
+    // 5. Taxonomy & Naming
+    // Taxonomy expects { vertices: [], faces: [[i,j,k],...] }
+    const mockResult = {
+        vertices: form.points,
+        faces: form.faces
+    };
+
+    const classInfo = Taxonomy.classify(mockResult, { n: gridSize - 1 });
+
+    form.metadata = {
+        ...classInfo, // vProfile, eProfile, cGeo, name
+        isClosed: validation.volumes > 0,
+        volumeCount: validation.volumes,
+        faceCount: form.faces.length // Override taxonomy face count if it parses differently
+    };
+
+    // Standard properties
+    form.metadata.symmetry = "Oh (Cubic)";
+    // Convexity Check: Simple check if volumeCount=1 and faceCount matches Euler?
+    // Actually, let's leave 'convex' undefined or false unless we check it.
+    // Taxonomy might tell us if it's a known solid.
+    form.metadata.convex = (validation.volumes === 1 && validation.isConnected && form.faces.length > 3); // Rough heuristic
+
+    // Scaling: Normalize to SpaceHarmony unit (approx -0.5 to 0.5)
+    // Points are on integer grid [-1, 0, 1] (size 2). Scale by 0.5 to get size 1.
+    const scaleFactor = 0.5;
+    form.points.forEach(p => p.multiplyScalar(scaleFactor));
+
     return form;
 }
 
-form.points = hullResult.vertices;
+/**
+ * Filter out faces that are "Internal" (Occluded on both sides).
+ * Retains visible surfaces (One or both sides clear).
+ */
+function _filterInternalFaces(faceIndicesArray, points) {
+    if (!faceIndicesArray || faceIndicesArray.length === 0) return [];
 
-// Convert Hull Faces to Lines?
-// Hull gives Faces. We should derive Lines from Faces for visualization.
-const hullLines = Taxonomy.getUniqueEdges(hullResult.faces);
-form.lines = hullLines.map(e => new Line(e[0], e[1]));
-form.faces = hullResult.faces; // Triangles
+    const visibleFaces = [];
+    const ray = new THREE.Ray();
+    const tri = new THREE.Triangle();
+    const target = new THREE.Vector3();
 
-// 5. Taxonomy & Naming
-const classInfo = Taxonomy.classify(hullResult, { n: gridSize - 1 });
-form.metadata = {
-    ...classInfo, // vProfile, eProfile, cGeo, name
-    isClosed: true,
-    volumeCount: 1, // Convex Hull is always 1 volume
-    faceCount: classInfo.cGeo.split('-')[0].substring(1) // Parse F<n>
-};
+    // Pre-compute geometric faces for intersection tests
+    // Using simple Triangles. For Squares/Pentagons, we check specific sub-triangles or average plane?
+    // Robust approach: Treat every face as a collection of triangles (Fan) for blocking.
+    const blockers = [];
+    faceIndicesArray.forEach((indices, fIdx) => {
+        const p0 = points[indices[0]];
+        for (let i = 1; i < indices.length - 1; i++) {
+            blockers.push({
+                a: p0,
+                b: points[indices[i]],
+                c: points[indices[i + 1]],
+                parentIdx: fIdx
+            });
+        }
+    });
 
-// Standard properties
-form.metadata.symmetry = "Oh (Cubic)";
-form.metadata.convex = true;
+    // Also include Point Blockers? (Vertices blocking squares in Octahedron)
+    // Ray-Point intersection is finicky. 
+    // But usually faces share vertices, so we hit the neighbor face at distance 0.
+    // We only care about hits at distance > epsilon (Self-intersection) OR hits at some distance.
 
-// Scaling: Normalize to SpaceHarmony unit (approx -0.5 to 0.5)
-// Points are on integer grid [-1, 0, 1] (size 2). Scale by 0.5 to get size 1.
-const scaleFactor = 0.5;
-form.points.forEach(p => p.multiplyScalar(scaleFactor));
+    // Actually, for the Octahedron Square:
+    // Center (0,0,0). Ray (0,0,1).
+    // Target is Vertex (0,0,1).
+    // This vertex is part of 4 faces.
+    // The ray hits the common edge/vertex of those faces.
+    // triangle.intersect() handles edge/vertex hits? Yes.
 
-return form;
+    faceIndicesArray.forEach((indices, myIdx) => {
+        // 1. Calc Center & Normal
+        const center = new THREE.Vector3();
+        indices.forEach(i => center.add(points[i]));
+        center.divideScalar(indices.length);
+
+        // Normal: (p1-p0) x (p2-p0)
+        const p0 = points[indices[0]];
+        const p1 = points[indices[1]];
+        const p2 = points[indices[2]]; // Assume at least 3
+        const v1 = new THREE.Vector3().subVectors(p1, p0);
+        const v2 = new THREE.Vector3().subVectors(p2, p0);
+        const normal = new THREE.Vector3().crossVectors(v1, v2).normalize();
+
+        if (normal.lengthSq() < 0.1) {
+            // Degenerate normal? Keep it or toss?
+            return;
+        }
+
+        // 2. Check Both Directions
+        // Offset center slightly to avoid self-intersection with own edges
+        const bias = 0.001;
+        const origin = center.clone();
+
+        const checkDir = (dir) => {
+            ray.set(origin, dir);
+
+            // Check against all blockers (except those belonging to me?)
+            // If we hit our own face, it's at dist~0 (if non-convex) or because of origin.
+            // But we start at Center.
+            // If the face is convex planar, Ray won't hit itself.
+
+            let minD = Infinity;
+
+            for (const b of blockers) {
+                if (b.parentIdx === myIdx) continue; // Don't block self
+
+                tri.set(b.a, b.b, b.c);
+                // Using backfaceCulling = false to hit ANY side of the blocker
+                const hit = ray.intersectTriangle(tri.a, tri.b, tri.c, false, target);
+
+                if (hit) {
+                    const d = origin.distanceTo(hit);
+                    // If d is HUGE (infinity), ignore.
+                    // If d is very small? 
+                    // In Octahedron, Center to Vertex is 1.0.
+                    // If d < bias, ignore?
+                    if (d > bias) {
+                        if (d < minD) minD = d;
+                    }
+                }
+            }
+            return (minD < Infinity);
+        };
+
+        let blockedA = false;
+        let blockedB = false;
+
+        // Check +Normal
+        blockedA = checkDir(normal);
+
+        // Check -Normal
+        if (blockedA) {
+            const negNormal = normal.clone().negate();
+            blockedB = checkDir(negNormal);
+        }
+
+        // If NOT both blocked, keep it
+        if (!(blockedA && blockedB)) {
+            visibleFaces.push(indices);
+        }
+    });
+
+    return visibleFaces;
 }
 
 function _getArgminPairSignature(p1, p2, matrices) {
@@ -513,6 +631,7 @@ function _defineGrid(gridSize, pointDensity, options = {}) {
 
         const addPoints = (vectors, scaleMultiplier = 1.0) => {
             vectors.forEach(v => {
+
                 const p = v.clone().normalize().multiplyScalar(radius * scaleMultiplier);
                 let exists = false;
                 for (let existing of points) {
