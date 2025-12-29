@@ -754,10 +754,21 @@ export class App {
     }
 
     async fetchLibrary() {
+        // 1. Try Dynamic API (Local Server Node.js)
         try {
             const res = await fetch('/api/collections');
             if (res.ok) return await res.json();
-        } catch (e) { console.error("Library fetch failed", e); }
+        } catch (e) { /* Ignore network errors */ }
+
+        // 2. Try Static Index (GitHub Pages / VS Code Live Server)
+        try {
+            // Note: 'collections/index.json' must be maintained by the server
+            const res = await fetch('collections/index.json');
+            if (res.ok) return await res.json();
+        } catch (e) {
+            console.warn("Library not accessible (neither API nor Index found).");
+        }
+
         return [];
     }
 
