@@ -80,9 +80,9 @@
               </button>
             </div>
             <div class="icon-strip">
-              <button type="button" id="import-json-button" class="icon-button" data-i18n-title="ui.import"
-                title="Import JSON">
-                <span class="material-icons-outlined" aria-hidden="true">upload_file</span>
+
+              <button type="button" id="save-to-library" class="icon-button" title="Save to Library">
+                <span class="material-icons-outlined" aria-hidden="true">save_as</span>
               </button>
               <button type="button" id="export-json-button" class="icon-button" data-i18n-title="ui.export.json"
                 title="Export JSON">
@@ -429,15 +429,60 @@
             title="Versucht Formen zu schließen"></label>
       </div>
       <div style="display:flex; gap:10px; justify-content:flex-end; flex-wrap: wrap;">
+        <button id="btn-library" class="action-btn secondary"
+          style="margin-right:auto; display:flex; align-items:center; gap:6px;">
+          <span class="material-icons-outlined">library_books</span> Library
+        </button>
         <button id="gen-close" class="action-btn">Close</button>
         <button id="gen-systematic" class="action-btn" title="Generiert alle möglichen konvexen Formen">Systematic
           (BETA)</button>
+
         <button id="gen-start" class="action-btn">Generate Random</button>
       </div>
       <div id="gen-status" style="margin-top:10px; font-style:italic;"></div>
       <div id="gen-results"
         style="margin-top:15px; max-height:300px; overflow-y:auto; display:grid; grid-template-columns:1fr; gap:5px;">
         <!-- Results go here -->
+      </div>
+    </div>
+  </div>
+
+  <div id="save-modal" class="modal"
+    style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:1100; align-items:center; justify-content:center;">
+    <div class="modal-content"
+      style="background:var(--surface, #222); padding:20px; border-radius:12px; max-width:400px; width:90%; color:var(--text, #fff);">
+      <h2 style="margin-top:0;">Save to Library</h2>
+
+      <div style="margin:20px 0;">
+        <label style="display:block; margin-bottom:5px; font-weight:bold;">Name:</label>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <input type="text" id="save-name-input"
+            style="flex:1; padding:8px; border-radius:4px; border:1px solid #555; background:#333; color:#fff;"
+            autofocus>
+          <button id="save-help-btn" title="Taxonomy Info"
+            style="background:none; border:none; color:var(--primary, #4facfe); cursor:pointer; padding:4px; flex-shrink:0; display:flex; align-items:center; justify-content:center;">
+            <span class="material-icons-outlined" style="font-size:24px;">help_outline</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="save-help-content"
+        style="display:none; background:#333; padding:10px; border-radius:4px; margin-bottom:15px; font-size:0.85rem; line-height:1.4; color:#ccc; border:1px solid #444;">
+        <strong style="color:var(--primary, #4facfe);">Naming Taxonomy:</strong><br>
+        <ul style="padding-left:15px; margin:5px 0;">
+          <li><strong>P_xF_yV</strong>: Polyhedron (x Faces, y Verts)</li>
+          <li><strong>L_xE_yV</strong>: Line/Wireframe (x Edges)</li>
+        </ul>
+        <div style="margin-top:8px;">
+          <em style="opacity:0.8;">Examples:</em><br>
+          <code>cubic_P_6F_8V</code> (Cube)<br>
+          <code>iso_P_12F_20V</code> (Dodecahedron)
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:10px;">
+        <button id="save-cancel" class="action-btn secondary">Cancel</button>
+        <button id="save-confirm" class="action-btn primary">Save</button>
       </div>
     </div>
   </div>

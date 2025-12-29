@@ -7,6 +7,7 @@ import { SymmetryEngine } from './SymmetryEngine.js';
 import { GeometryUtils } from './GeometryUtils.js';
 import { LocalizationManager } from './LocalizationManager.js';
 import { GridSystem } from './GridSystem.js';
+import { Taxonomy } from './Taxonomy.js';
 
 export class App {
     constructor() {
@@ -149,7 +150,10 @@ export class App {
             onLoadResult: (res) => this.loadGeneratedForm(res),
             onViewZ: () => this.sceneManager.setView('z'),
             onViewIso: () => this.sceneManager.setView('iso'),
-            onViewOverview: () => this.sceneManager.setView('overview')
+            onViewOverview: () => this.sceneManager.setView('overview'),
+            onCollectSystematic: (dens) => this.collectAllSystematicForms(dens),
+            onOpenLibrary: () => this.uiManager.openLibrary(this),
+            onSaveToLibrary: () => this.saveCurrentToLibrary()
         });
 
         this._updateGridDensity(1);
@@ -641,6 +645,322 @@ export class App {
 
         // Prioritize Picking Cloud
         this.inputManager.setPickableMeshes([this.pickingCloud, this.gridMesh]);
+    }
+
+    async collectAllSystematicForms(density) {
+        console.log(`Starting Collection for P(${density})...`);
+        const collection = new Map(); // Hash -> Form Data
+        let index = 0;
+        let exhausted = false;
+
+        // UI Feedback
+        const originalStatus = document.getElementById('status-display')?.innerText;
+        const updateStatus = (msg) => {
+            const el = document.getElementById('status-display');
+            if (el) el.innerText = msg;
+        };
+
+        try {
+            while (!exhausted) {
+                updateStatus(`Collecting Form #${index + 1}... (Unique: ${collection.size})`);
+
+                // Wrap worker call in a promise
+                const result = await new Promise((resolve, reject) => {
+                    this._collectionResolve = resolve;
+                    this._collectionReject = reject;
+
+                    this.worker.postMessage({
+                        type: 'generate',
+                        config: {
+                            gridSize: 3,
+                            pointDensity: density,
+                            mode: 'systematic',
+                            gridSize: 3,
+                            options: {
+                                index: index,
+                                symmetryGroup: 'cubic' // Default systematic
+                            }
+                        }
+                    });
+                });
+
+                if (result.metadata && result.metadata.exhausted) {
+                    exhausted = true;
+                    console.log("Systematic Generation Exhausted.");
+                } else {
+                    // Classify/Deduplicate
+                    const entry = {
+                        index: index,
+                        name: result.metadata.name,
+                        cGeo: result.metadata.cGeo,
+                        vProfile: result.metadata.vProfile,
+                        eProfile: result.metadata.eProfile,
+                        convex: result.metadata.convex,
+                        faces: result.metadata.faceCount,
+                        volumes: result.metadata.volumeCount,
+                        symmetry: result.metadata.symmetry
+                    };
+
+                    const hash = `${result.metadata.cGeo}-${result.metadata.vProfile}`;
+
+                    if (!collection.has(hash)) {
+                        collection.set(hash, entry);
+                    }
+                    index++;
+
+                    if (index > 1000) exhausted = true;
+                }
+            }
+        } catch (e) {
+            console.error("Collection Failed:", e);
+        } finally {
+            this._collectionResolve = null;
+            this._collectionReject = null;
+            updateStatus(originalStatus || "Ready");
+        }
+
+        // Export
+        const manifest = {
+            density: density,
+            gridSize: this.settings ? this.settings.gridSize : 3,
+            timestamp: new Date().toISOString(),
+            count: collection.size,
+            forms: Array.from(collection.values())
+        };
+
+        console.log("Collection Complete:", manifest);
+
+        // Try Save to Server
+        this._saveCollection(`FormCollection_P${density}`, manifest);
+    }
+
+    async _saveCollection(name, data) {
+        try {
+            const res = await fetch('/api/collections', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, data })
+            });
+            if (res.ok) {
+                console.log("Saved to Server Library");
+                if (this.uiManager.showNotification) this.uiManager.showNotification("Collection Saved to Library!");
+                return;
+            }
+        } catch (e) {
+            console.warn("Server not available, downloading file instead.", e);
+        }
+        // Fallback
+        this._downloadJSON(data, `${name}.json`);
+    }
+
+    async fetchLibrary() {
+        try {
+            const res = await fetch('/api/collections');
+            if (res.ok) return await res.json();
+        } catch (e) { console.error("Library fetch failed", e); }
+        return [];
+    }
+
+    async deleteCollection(filename) {
+        try {
+            await fetch('/api/collections/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename })
+            });
+            return true;
+        } catch (e) { return false; }
+    }
+
+    async renameCollection(oldName, newName) {
+        try {
+            await fetch('/api/collections/rename', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ oldName, newName })
+            });
+            return true;
+        } catch (e) { return false; }
+    }
+
+    // ... existing library methods ...
+
+    async saveCurrentToLibrary() {
+        // Prepare Data
+        let data = {};
+
+        // If we have a structured generated form, use it
+        // Or if we have manual state.
+        // For simplicity, let's export the current state as a standard JSON representation
+        // similar to 'export-json'.
+
+        // Reuse export logic?
+        const exportData = {
+            metadata: {
+                timestamp: new Date().toISOString(),
+                type: 'manual_save',
+                faceCount: this.manualFaces.size
+            },
+            points: this.gridPoints.filter((_, i) => this.selectedPointIndices.has(i)).map(p => ({ x: p.x, y: p.y, z: p.z })),
+            // TODO: We need robust edge reconstruction from Scene or internal state if manual mode.
+            // For now, let's assume if 'this.currentForm' exists (from generator), we use that.
+            // If not, we might be limited.
+        };
+
+        // Better: Use `_generateExportJSON` logic if it exists (it was planned/impl in `app_old`).
+        // Let's implement a simple serializer if needed.
+        // Actually, let's check if we have `this.currentForm`.
+
+        if (this.currentForm) {
+            data = this.currentForm;
+        } else {
+            // Fallback for manual drawing
+            // We reconstruct a basic object
+            data = {
+                points: Array.from(this.selectedPointIndices).map(i => this.gridPoints[i]),
+                lines: Array.from(this.edges.values()).map(e => ({ a: e.a, b: e.b })),
+                faces: Array.from(this.manualFaces.values())
+            };
+        }
+
+        // Generate Taxonomy-based Name
+        let defaultName = data.name;
+
+        if (!defaultName) {
+            const fCount = (data.faces && data.faces.length) || 0;
+            const vCount = (data.points && data.points.length) || (data.vertices && data.vertices.length) || 0;
+            const eCount = (data.lines && data.lines.length) || (data.edges && data.edges.length) || 0;
+
+            if (fCount > 0) defaultName = `P_${fCount}F_${vCount}V`;
+            else if (eCount > 0) defaultName = `L_${eCount}E_${vCount}V`;
+            else if (vCount > 0) defaultName = `V_${vCount}Points`;
+            else defaultName = `Form_${new Date().getTime()}`;
+
+            // Symmetry Prefix
+            const sym = (this.currentForm && (this.currentForm.symmetryName || this.currentForm.symmetryGroup)) || data.symmetryGroup;
+            if (sym) defaultName = `${sym}_${defaultName}`;
+        }
+
+        // Use Custom Modal with Taxonomy Help
+        this.uiManager.openSaveModal(defaultName, async (name) => {
+            await this._saveCollection(name, data);
+        });
+    }
+
+    async loadFromLibrary(filename) {
+        try {
+            // Load via static file
+            // encode filename?
+            const res = await fetch(`/collections/${filename}`);
+            if (!res.ok) throw new Error("File not found");
+            const data = await res.json();
+
+            console.log("Loaded:", data);
+
+            // Check if Manifest (Collection) or Single Form
+            if (data.forms && Array.isArray(data.forms)) {
+                // It's a collection.
+                if (confirm(`This is a collection of ${data.count} forms. Load the first one?`)) {
+                    this._loadFormToCanvas(data.forms[0]);
+                }
+            } else {
+                // Single Form
+                this._loadFormToCanvas(data);
+            }
+
+            // Close Library UI if open?
+            const modal = document.getElementById('library-modal');
+            if (modal) modal.style.display = 'none';
+
+        } catch (e) {
+            console.error("Load failed", e);
+            alert("Error loading file: " + e.message);
+        }
+    }
+
+    _loadFormToCanvas(form) {
+        this._clearCanvas();
+        // Set points
+        // Helper to visualize simple form object
+        // We reuse logic from `_onWorkerMessage` or `_updateGeometry`?
+
+        // We need to map form points back to GridSystem indices?
+        // Or just render them raw?
+        // Ideally, we snap them to grid if they match.
+        // For visual consistency, let's just render lines/faces via SceneManager directly
+        // OR try to re-hydrate App state.
+
+        // Re-hydration is hard if density differs.
+        // Let's assume standard grid.
+
+        // Simplest: Use SceneManager to render raw mesh for now?
+        // Or attempt full rehydration.
+        // If it came from Generator, it has `points`, `lines` (indices), `faces` (indices).
+
+        // Let's try to set `this.currentForm` and trigger render?
+        // We lack the `Systematic` renderer for arbitrary form.
+
+        // Let's try to pass it to `_onWorkerMessage` handler logic?
+        // `_onWorkerMessage` expects {type:'success', data: form}.
+        // Let's mimic that.
+
+        this._displayGeneratedForm(form);
+    }
+
+    _displayGeneratedForm(form) {
+        // Verify points match grid?
+        // Just call SceneManager helper?
+        // `SceneManager.updateGeometry(points, lines, faces/volumes)`
+
+        // Map indices to Vector3
+        // If form.points are objects {x,y,z}, use them.
+
+        // Reconstruct lines/faces with Vector3s
+        const points = form.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
+        const lines = (form.lines || []).map(l => ({
+            start: points[l.a],
+            end: points[l.b]
+        }));
+
+        // Volumes/Faces
+        // SceneManager expects specific structure.
+        // Let's look at `SceneManager.updateGeometry`.
+        // It's not visible here, but assumed it exists or we use `addMesh`.
+
+        // We'll reuse `_onWorkerMessage` logic which calls `this.sceneManager.updateGeometry`.
+        // But `_onWorkerMessage` logic is complex (deduplication of lines etc).
+
+        // Shortcut: Use `sceneManager.clear()` and then add components.
+        this.sceneManager.clear();
+        this.sceneManager.addPoints(points);
+        this.sceneManager.addLines(lines);
+
+        // Faces
+        if (form.faces) {
+            const faceMeshes = form.faces.map(f => {
+                return f.vertices.map(vi => points[vi]); // Array of vectors
+            });
+            this.sceneManager.addFaces(faceMeshes); // Check signature
+        }
+
+        this.currentForm = form;
+
+        // Update stats
+        if (this.uiManager.elements['face-count']) {
+            this.uiManager.elements['face-count'].textContent = `Faces: ${form.faces ? form.faces.length : 0}`;
+        }
+    }
+
+    _downloadJSON(data, filename) {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     }
 
     _updateNodeColors() {

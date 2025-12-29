@@ -13,7 +13,7 @@ export class UIManager {
             'theme-toggle',
             'undo-button', 'redo-button', 'clear-button', 'random-form-button',
             'view-z', 'view-iso', 'view-overview',
-            'import-json-button', 'export-json-button', 'export-obj-button', 'export-png-button',
+            'save-to-library', 'export-json-button', 'export-obj-button', 'export-png-button',
             'grid-density', 'toggle-auto-rotate', 'coord-system',
             'toggle-points', 'toggle-lines', 'toggle-show-closed', 'toggle-cube-frame',
             'toggle-curved-lines', 'toggle-curved-surfaces', 'curve-convexity',
@@ -24,7 +24,9 @@ export class UIManager {
             'translation-axis', 'translation-count', 'translation-step', 'translation-connect',
             'screw-axis', 'screw-angle', 'screw-distance', 'screw-count', 'screw-enabled', 'screw-connect',
             'face-count',
-            'btn-generator', 'generator-modal', 'gen-close', 'gen-start', 'gen-systematic', 'gen-symmetry', 'gen-count', 'gen-minfaces', 'gen-minvolumes', 'gen-maxedges', 'gen-results', 'gen-status'
+            'btn-generator', 'generator-modal', 'gen-close', 'gen-start', 'gen-systematic', 'gen-symmetry', 'gen-count', 'gen-minfaces', 'gen-minvolumes', 'gen-maxedges', 'gen-results', 'gen-status',
+            'btn-library',
+            'save-modal', 'save-name-input', 'save-help-btn', 'save-help-content', 'save-cancel', 'save-confirm'
         ];
 
         ids.forEach(id => {
@@ -38,6 +40,10 @@ export class UIManager {
 
     _bindEvents() {
         console.log("UIManager: Binding events...");
+
+        // Library Button (Hardcoded in HTML now)
+        this._bindClick('btn-library', 'onOpenLibrary');
+
         this._bindClick('theme-toggle', 'onThemeToggle');
         this._bindClick('undo-button', 'onUndo');
         this._bindClick('redo-button', 'onRedo');
@@ -48,7 +54,7 @@ export class UIManager {
         this._bindClick('view-overview', 'onViewOverview');
 
         // Import/Export
-        this._bindClick('import-json-button', 'onImportJSON');
+        this._bindClick('save-to-library', 'onSaveToLibrary');
         this._bindClick('export-json-button', 'onExportJSON');
         this._bindClick('export-obj-button', 'onExportOBJ');
         this._bindClick('export-png-button', 'onExportPNG');
@@ -148,10 +154,17 @@ export class UIManager {
             this._toggleModal('generator-modal', true);
         });
         this._bindClick('btn-collection', (e) => {
-            this._toggleModal('generator-modal', true);
-            // Optionally scroll to results?
-            const results = this.elements['gen-results'];
-            if (results) results.scrollIntoView({ behavior: 'smooth' });
+            // Trigger App Collection
+            // Requires access to App instance. 
+            // UIManager callbacks usually just string -> App method mapping?
+            // Existing mappings like 'onGenerate' call callback.
+            // I'll add 'onCollectSystematic' callback.
+            if (this.callbacks['onCollectSystematic']) {
+                // Prompt for density? Or default to current?
+                // Let's use current UI density.
+                const dens = this._getValue('gen-point-density') || 2;
+                this.callbacks['onCollectSystematic'](dens);
+            }
         });
         this._bindClick('gen-close', (e) => this._toggleModal('generator-modal', false));
         this.elements['gen-start']?.addEventListener('click', () => {
@@ -457,6 +470,56 @@ export class UIManager {
         if (status) status.textContent = "Error: " + msg;
     }
 
+    openSaveModal(defaultName, onSave) {
+        const modal = this.elements['save-modal'];
+        const input = this.elements['save-name-input'];
+        const btnHelp = this.elements['save-help-btn'];
+        const btnCancel = this.elements['save-cancel'];
+        const btnConfirm = this.elements['save-confirm'];
+        const helpContent = this.elements['save-help-content'];
+
+        if (!modal || !input) return;
+
+        input.value = defaultName;
+        // Select all text for easy overwrite (deferred to ensure focus)
+
+        // Reset Help
+        if (helpContent) helpContent.style.display = 'none';
+
+        // Handlers
+        if (btnHelp) btnHelp.onclick = () => {
+            const isHidden = helpContent.style.display === 'none';
+            helpContent.style.display = isHidden ? 'block' : 'none';
+        };
+
+        const close = () => {
+            modal.style.display = 'none';
+        };
+
+        if (btnCancel) btnCancel.onclick = close;
+
+        const commit = () => {
+            const name = input.value.trim();
+            if (name) {
+                onSave(name);
+                close();
+            } else {
+                alert("Please enter a name.");
+            }
+        };
+
+        if (btnConfirm) btnConfirm.onclick = commit;
+
+        input.onkeydown = (e) => {
+            if (e.key === 'Enter') commit();
+            if (e.key === 'Escape') close();
+        };
+
+        modal.style.display = 'flex';
+        input.focus();
+        setTimeout(() => input.select(), 10);
+    }
+
     _toggleModal(id, show) {
         const el = this.elements[id];
         if (el) el.style.display = show ? 'flex' : 'none';
@@ -476,6 +539,7 @@ export class UIManager {
     }
 
     showNotification(message, duration = 3000) {
+        // ... (existing)
         const id = 'ui-notification-toast';
         let toast = document.getElementById(id);
         if (!toast) {
@@ -504,4 +568,120 @@ export class UIManager {
             toast.style.opacity = '0';
         }, duration);
     }
+
+    // --- Library UI ---
+
+    async openLibrary(app) {
+        // Ensure Modal Exists
+        let modal = document.getElementById('library-modal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'library-modal';
+            modal.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0,0,0,0.8); z-index: 5000;
+                display: flex; justify-content: center; align-items: center;
+            `;
+            modal.innerHTML = `
+                <div style="background:var(--surface, #222); padding: 20px; border-radius: 8px; width: 500px; max-height: 80vh; display: flex; flex-direction: column;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                        <h2 style="margin:0;">Form Collections Library</h2>
+                        <button id="lib-close" style="background:none; border:none; color:inherit; font-size:1.5rem; cursor:pointer;">&times;</button>
+                    </div>
+                    <div style="font-size:0.85rem; color:#aaa; margin-bottom:15px; line-height:1.4;">
+                        Requires running local server: <code>./run_form_generator.command</code>.<br>
+                        Saved collections are stored in the <code>collections/</code> folder.
+                    </div>
+                    <div id="lib-list" style="flex:1; overflow-y:auto; border:1px solid #444; border-radius:4px; padding:10px;">
+                        Loading...
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            document.getElementById('lib-close').onclick = () => modal.style.display = 'none';
+        }
+
+        modal.style.display = 'flex';
+        const list = document.getElementById('lib-list');
+        list.innerHTML = 'Loading...';
+
+        const files = await app.fetchLibrary(); // Assume app passed or available?
+        // UIManager doesn't have ref to App usually.
+        // It relies on callbacks.
+        // We should trigger a callback 'onRequestLibrary' that returns data?
+        // Or specific 'onOpenLibrary' that handles population?
+
+        // Actually, if I am implementing this inside UIManager, I need data.
+        // Let's assume 'app' is passed or we change the pattern.
+        // The pattern is UIManager -> triggers -> App handles.
+        // So 'openLibrary()' should be called by App?
+        // No, 'onOpenLibrary' callback.
+
+        // I'll assume valid files passed for rendering:
+        this.renderLibraryList(files, list, app);
+    }
+
+    renderLibraryList(files, container, app) {
+        container.innerHTML = '';
+        if (files.length === 0) {
+            container.innerHTML = '<div style="opacity:0.5; text-align:center;">No collections found.</div>';
+            return;
+        }
+
+        files.forEach(f => {
+            const row = document.createElement('div');
+            row.style.cssText = `display:flex; justify-content:space-between; align-items:center; padding:8px; border-bottom:1px solid #333;`;
+
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = f.name;
+            nameSpan.style.fontWeight = 'bold';
+
+            const actions = document.createElement('div');
+            actions.style.display = 'flex';
+            actions.style.gap = '8px';
+
+            const btnLoad = document.createElement('button');
+            btnLoad.textContent = 'Load';
+            btnLoad.className = 'action-btn secondary small'; // Style
+            btnLoad.style.fontSize = '0.8rem';
+            btnLoad.style.padding = '2px 8px';
+            btnLoad.onclick = () => app.loadFromLibrary(f.filename);
+
+            const btnRename = document.createElement('button');
+            btnRename.innerHTML = '<span class="material-icons-outlined" style="font-size:16px;">edit</span>';
+            btnRename.title = 'Rename';
+            btnRename.style.background = 'none';
+            btnRename.style.border = 'none';
+            btnRename.style.color = '#ccc';
+            btnRename.style.cursor = 'pointer';
+
+            btnRename.onclick = async () => {
+                const newName = prompt("New name:", f.name);
+                if (newName && newName !== f.name) {
+                    await app.renameCollection(f.name, newName);
+                    this.openLibrary(app); // Refresh
+                }
+            };
+
+            const btnDelete = document.createElement('button');
+            btnDelete.innerHTML = '<span class="material-icons-outlined" style="font-size:16px;">delete</span>';
+            btnDelete.title = 'Delete';
+            btnDelete.style.background = 'none';
+            btnDelete.style.border = 'none';
+            btnDelete.style.color = '#f55';
+            btnDelete.style.cursor = 'pointer';
+
+            btnDelete.onclick = async () => {
+                if (confirm(`Delete ${f.name}?`)) {
+                    await app.deleteCollection(f.filename);
+                    this.openLibrary(app); // Refresh
+                }
+            };
+
+            actions.append(btnRename, btnDelete);
+            row.append(nameSpan, actions);
+            container.appendChild(row);
+        });
+    }
 }
+
