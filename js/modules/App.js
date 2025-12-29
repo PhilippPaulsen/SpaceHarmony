@@ -142,6 +142,10 @@ export class App {
             onImportJSON: () => this._importJSON(),
             onRandomForm: () => this._randomForm(),
             onGenerate: (config) => this.generateForms(config),
+            onGenerateSystematic: (config) => {
+                // Large count to "Ensure" we find all (Systematic usually < 100 for n=2)
+                this.generateForms({ ...config, count: 500 });
+            },
             onLoadResult: (res) => this.loadGeneratedForm(res),
             onViewZ: () => this.sceneManager.setView('z'),
             onViewIso: () => this.sceneManager.setView('iso'),
@@ -262,11 +266,9 @@ export class App {
                     mode: config.mode,
                     symmetryGroup: config.symmetryGroup,
                     maxEdges: config.maxEdges,
-                    // Dynamic Heuristic for Seed Length
-                    // If we want Complex (high faces) or specific Volumes, a slightly longer seed path helps.
-                    // But keep it small (1-2) for Platonic to avoid mess.
-                    seedMinLength: (config.minFaces > 10 || config.minVolumes > 0) ? 1 : 1,
-                    seedMaxLength: (config.minFaces > 10) ? 3 : 2
+                    // User Request: ALWAYS 1 Single Connection (Edge Orbit)
+                    seedMinLength: 1,
+                    seedMaxLength: 1
                 }
             };
             this.worker.postMessage(workerConfig);

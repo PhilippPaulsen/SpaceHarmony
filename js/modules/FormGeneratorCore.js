@@ -10,6 +10,8 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js';
 import { SymmetryEngine } from './SymmetryEngine.js';
 import { GeometryUtils } from './GeometryUtils.js';
+import { ConvexHull } from './ConvexHull.js';
+import { Taxonomy } from './Taxonomy.js';
 
 /**
  * Line represents a connection between two points by their indices in a point array.
@@ -39,6 +41,11 @@ export function generateForm(gridSize, pointDensity, options = {}) {
     const mode = options.mode || (options.generationOptions && options.generationOptions.mode);
 
     const symmetry = new SymmetryEngine();
+
+    // New Systematic Mode
+    if (mode === 'systematic') {
+        return _generateSystematicConvex(gridSize, pointDensity, options);
+    }
 
     if (symGroup || mode === 'maxRegular') {
         const groupKey = symGroup || 'cubic';
@@ -270,6 +277,158 @@ function _generateSymmetricForm(gridPoints, options, symmetryEngine) {
             debugS: totalShells
         }
     };
+}
+
+/**
+ * NEW: Systematic Generation of Convex Symmetric Forms
+ * 
+ * 1. Enumerates all unique connection pairs in P(n).
+ * 2. Generates edge orbit under full symmetry.
+ * 3. Computes Convex Hull.
+ * 4. Filters duplicates via Taxonomy.
+ */
+function _generateSystematicConvex(gridSize, pointDensity, options) {
+    const symmetry = new SymmetryEngine();
+    const matrices = symmetry.getSymmetryGroup('cubic'); // Full Octahedral
+
+    // 1. Generate Master Grid Points
+    // Respect user density but enforce minimum 2 (Corners) to ensure volume.
+    // If pointDensity is 1 (center only), we force 2 to get at least a cube.
+    const effectiveDensity = Math.max(2, pointDensity || 2);
+    const gridPoints = _defineGrid(gridSize, effectiveDensity, options);
+
+    // 2. Identify Target Pair based on 'options.index'
+    const pairs = [];
+    const pairSet = new Set();
+
+    let pairAttempts = 0;
+
+    for (let i = 0; i < gridPoints.length; i++) {
+        for (let j = i + 1; j < gridPoints.length; j++) {
+            const p1 = gridPoints[i];
+            const p2 = gridPoints[j];
+            pairAttempts++;
+
+            // Canonicalize this pair under symmetry
+            // Find "Smallest" pair in the orbit
+            const sig = _getArgminPairSignature(p1, p2, matrices);
+
+            if (!pairSet.has(sig.key)) {
+                pairSet.add(sig.key);
+                pairs.push(sig); // { key, p1, p2 } representative
+            }
+        }
+    }
+}
+
+// Sort pairs to strictly define "Form #1, #2..."
+// Sort by Length, then coordinates
+pairs.sort((a, b) => {
+    const d = a.distSq - b.distSq;
+    if (Math.abs(d) > 0.001) return d;
+    return a.key.localeCompare(b.key);
+});
+
+const targetPair = pairs[options.index || 0];
+
+const form = new Form();
+if (!targetPair) {
+    // Out of bounds - Stop generation
+    form.metadata = { exhausted: true };
+    return form;
+}
+
+// 3. Generate Full Edge Orbit
+const startLine = { points: [targetPair.p1, targetPair.p2], lines: [new Line(0, 1)] };
+// Create temp form structure for symmetry engine
+const tempForm = { points: [targetPair.p1, targetPair.p2], lines: [new Line(0, 1)] };
+
+// Use custom apply to get all edges
+_applySymmetryGroup(tempForm, matrices);
+
+// 4. Compute Convex Hull
+// Gather all vertices
+const hullInput = tempForm.points;
+const hull = new ConvexHull(hullInput);
+const hullResult = hull.generate();
+
+if (!hullResult) {
+    // Degenerate (Line/Plane)
+    // Return linear form? User said "Degenerate cases ... as 'kein Körper'".
+    // We return empty or the wireframe?
+    // Let's return the wireframe of the symmetry orbit (Lines) but NO FACES.
+    form.points = tempForm.points;
+    form.lines = tempForm.lines;
+    form.metadata = { isClosed: false, note: "Degenerate/Planar" };
+    return form;
+}
+
+form.points = hullResult.vertices;
+
+// Convert Hull Faces to Lines?
+// Hull gives Faces. We should derive Lines from Faces for visualization.
+const hullLines = Taxonomy.getUniqueEdges(hullResult.faces);
+form.lines = hullLines.map(e => new Line(e[0], e[1]));
+form.faces = hullResult.faces; // Triangles
+
+// 5. Taxonomy & Naming
+const classInfo = Taxonomy.classify(hullResult, { n: gridSize - 1 });
+form.metadata = {
+    ...classInfo, // vProfile, eProfile, cGeo, name
+    isClosed: true,
+    volumeCount: 1, // Convex Hull is always 1 volume
+    faceCount: classInfo.cGeo.split('-')[0].substring(1) // Parse F<n>
+};
+
+// Standard properties
+form.metadata.symmetry = "Oh (Cubic)";
+form.metadata.convex = true;
+
+// Scaling: Normalize to SpaceHarmony unit (approx -0.5 to 0.5)
+// Points are on integer grid [-1, 0, 1] (size 2). Scale by 0.5 to get size 1.
+const scaleFactor = 0.5;
+form.points.forEach(p => p.multiplyScalar(scaleFactor));
+
+return form;
+}
+
+function _getArgminPairSignature(p1, p2, matrices) {
+    // Find lexicographically smallest representation of the pair (u,v)
+    // applied to all symmetries.
+    // Key format: "dsq|x1,y1,z1|x2,y2,z2" (sorted p1<p2)
+
+    let minKey = null;
+    let minP1 = null;
+    let minP2 = null;
+
+    const distSq = p1.distanceToSquared(p2);
+
+    matrices.forEach(m => {
+        const t1 = p1.clone().applyMatrix4(m);
+        const t2 = p2.clone().applyMatrix4(m);
+
+        // Round to avoid float noise
+        [t1, t2].forEach(v => {
+            v.x = Math.round(v.x * 1000) / 1000;
+            v.y = Math.round(v.y * 1000) / 1000;
+            v.z = Math.round(v.z * 1000) / 1000;
+        });
+
+        // Sort points
+        let a, b;
+        if (GeometryUtils.pointKey(t1) < GeometryUtils.pointKey(t2)) { a = t1; b = t2; }
+        else { a = t2; b = t1; }
+
+        const key = `${GeometryUtils.pointKey(a)}>${GeometryUtils.pointKey(b)}`;
+
+        if (minKey === null || key < minKey) {
+            minKey = key;
+            minP1 = a;
+            minP2 = b;
+        }
+    });
+
+    return { key: minKey, distSq, p1: minP1, p2: minP2 };
 }
 
 /**

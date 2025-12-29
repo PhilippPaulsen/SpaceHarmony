@@ -13,14 +13,27 @@ self.onmessage = function (e) {
 
     try {
         const results = [];
+        const seenSignatures = new Set();
         let attempts = 0;
         const maxAttempts = count * 200; // Significantly increased attempts to find rare volumes
 
+        // Systematic Mode: Use monotonic index
+        let scanIndex = 0;
+
         while (results.length < count && attempts < maxAttempts) {
             attempts++;
-            // Pass index in options to drive the deterministic/hybrid strategy
-            const currentOptions = { ...options, index: results.length };
+
+            // For systematic, we MUST increment index every step, regardless of filter success
+            const currentIndex = (options.mode === 'systematic') ? scanIndex++ : results.length;
+
+            const currentOptions = { ...options, index: currentIndex };
             const form = generateForm(gridSize, pointDensity, currentOptions);
+
+            // Check for Systematic Exhaustion
+            if (form.metadata && form.metadata.exhausted) {
+                // Stop generation
+                break;
+            }
 
             // Deduplication & Filtering Logic
 
@@ -31,16 +44,16 @@ self.onmessage = function (e) {
             if (minVolumes > 0 && form.metadata.volumeCount < minVolumes) continue;
 
             // 3. Deduplication (Signature)
-            // DISABLED for variety (Visual Variants allowed).
-            // We want "50 Forms", not just "The 2 Unique Mathematical Solids".
-            /* 
-            const edgeKeys = form.lines.map(l => {
-                const a = l.a; const b = l.b; return a < b ? `${a}-${b}` : `${b}-${a}`;
-            });
-            edgeKeys.sort();
-            const signature = edgeKeys.join('|');
-            // Check usage... (disabled)
-            */
+            // Use Geometric Signature (cGeo) from Taxonomy if available
+            const signature = (form.metadata && form.metadata.cGeo)
+                ? form.metadata.cGeo
+                : form.lines.map(l => { const a = l.a; const b = l.b; return a < b ? `${a}-${b}` : `${b}-${a}`; }).sort().join('|');
+
+            if (seenSignatures.has(signature)) {
+                // console.log(`[Worker] Skipped duplicate signature: ${signature}`);
+                continue;
+            }
+            seenSignatures.add(signature);
 
             results.push({
                 points: form.points.map(p => ({ x: p.x, y: p.y, z: p.z })),

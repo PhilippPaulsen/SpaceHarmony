@@ -24,7 +24,7 @@ export class UIManager {
             'translation-axis', 'translation-count', 'translation-step', 'translation-connect',
             'screw-axis', 'screw-angle', 'screw-distance', 'screw-count', 'screw-enabled', 'screw-connect',
             'face-count',
-            'btn-generator', 'generator-modal', 'gen-close', 'gen-start', 'gen-symmetry', 'gen-count', 'gen-minfaces', 'gen-minvolumes', 'gen-maxedges', 'gen-results', 'gen-status'
+            'btn-generator', 'generator-modal', 'gen-close', 'gen-start', 'gen-systematic', 'gen-symmetry', 'gen-count', 'gen-minfaces', 'gen-minvolumes', 'gen-maxedges', 'gen-results', 'gen-status'
         ];
 
         ids.forEach(id => {
@@ -147,6 +147,12 @@ export class UIManager {
             }
             this._toggleModal('generator-modal', true);
         });
+        this._bindClick('btn-collection', (e) => {
+            this._toggleModal('generator-modal', true);
+            // Optionally scroll to results?
+            const results = this.elements['gen-results'];
+            if (results) results.scrollIntoView({ behavior: 'smooth' });
+        });
         this._bindClick('gen-close', (e) => this._toggleModal('generator-modal', false));
         this.elements['gen-start']?.addEventListener('click', () => {
             const config = {
@@ -157,6 +163,14 @@ export class UIManager {
                 maxEdges: this._getValue('gen-maxedges')
             };
             if (this.callbacks['onGenerate']) this.callbacks['onGenerate'](config);
+        });
+        this.elements['gen-systematic']?.addEventListener('click', () => {
+            const config = {
+                mode: 'systematic',
+                symmetryGroup: 'cubic', // Systematic implies Cubic/Oh generally
+                gridSize: 3
+            };
+            if (this.callbacks['onGenerateSystematic']) this.callbacks['onGenerateSystematic'](config);
         });
     }
 
@@ -323,6 +337,14 @@ export class UIManager {
         const container = this.elements['gen-results'];
         const status = this.elements['gen-status'];
         if (status) status.textContent = `Generated ${results.length} forms.`;
+
+        if (status) status.textContent = `Generated ${results.length} forms.`;
+
+        // If results are incremental (systematic), we might want to APPEND or replace?
+        // Current logic replaces. For systematic, we get results incrementally?
+        // App.js currently accumulates results in 'runSystematicGeneration'.
+        // Let's assume 'results' here is the FULL list or the new batch.
+        // For simplicity, we clear and rebuild (simpler for 50 items).
 
         if (!container) return;
         container.innerHTML = '';
