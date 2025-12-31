@@ -179,134 +179,76 @@ export class GridSystem {
     }
 
     _generateTetrahedralGrid(density, scale) {
+        // IVM (Isotropic Vector Matrix) / FCC Lattice Implementation
+        // We generate coordinates (x,y,z) such that x+y+z is even.
+        // This ensures all nearest neighbors are equidistant (d = sqrt(2) in integer space).
+        // density determines the resolution of the grid within the 'scale' (cubeHalfSize).
+
         const points = [];
-        const keys = new Set();
-        const add = (v) => {
-            const k = GeometryUtils.pointKey(v);
-            if (!keys.has(k)) {
-                keys.add(k);
-                points.push(v);
-            }
-        };
+        const uniqueKeys = new Set();
 
-        // Base Tetrahedron Vertices (Subset of Cube)
-        // (1,1,1), (-1,-1,1), (-1,1,-1), (1,-1,-1)
-        const verts = [
-            new THREE.Vector3(1, 1, 1),
-            new THREE.Vector3(-1, -1, 1),
-            new THREE.Vector3(-1, 1, -1),
-            new THREE.Vector3(1, -1, -1)
-        ];
+        // Ensure we use an even number of steps so that (d,d,d) satisfies the even-sum check (3d is even => d even).
+        // This guarantees the grid includes the Cube Corners (Frame Vertices) and the Center.
+        const d = Math.max(1, Math.floor(density)) * 2;
 
-        // 1. Center
-        add(new THREE.Vector3(0, 0, 0));
+        // Step size to fill the 'scale' volume
+        const step = scale / d;
 
-        // 2. Base Vertices
-        verts.forEach(v => add(v.clone().multiplyScalar(scale)));
+        // Loop through the Integer Cube
+        for (let x = -d; x <= d; x++) {
+            for (let y = -d; y <= d; y++) {
+                for (let z = -d; z <= d; z++) {
+                    // FCC Condition: Sum of coordinates must be even
+                    if ((Math.abs(x) + Math.abs(y) + Math.abs(z)) % 2 === 0) {
 
-        // 3. (Removed Dual/T2) - Keep aligned with T1 Frame
-        // The user specifically requested alignment with the Frame (T1).
-        // Adding Duals created visual confusion ("drawn on the dual").
-        // We only generate T1 shells for consistency.
+                        // Gradual/Shell Filter for Lower Densities
+                        if (density < 4.0) {
+                            const ax = Math.abs(x), ay = Math.abs(y), az = Math.abs(z);
+                            const h = d / 2;
 
-        // 4. Octahedron (Face centers of cube / Edge centers of T1)
-        if (density >= 2) {
-            const octa = [
-                new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0),
-                new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, -1, 0),
-                new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1)
-            ];
-            octa.forEach(v => add(v.clone().multiplyScalar(scale)));
-        }
+                            // Key Structural Groups
+                            const isCenter = (ax === 0 && ay === 0 && az === 0);
+                            const isOuterFrame = (ax === d || ay === d || az === d); // Frame Surface
+                            const isHalfShell = (ax === h || ay === h || az === h);  // Inner Shell
 
-        // 5. Nested Inner Shells (General Logic)
-        if (density >= 4) {
-            // For density 4, we did *0.5.
-            // For higher densities, we need a strategy.
-            // Strategy: Add shells at r = k/density or similar?
-            // Existing logic:
-            // D=1: r=1.0 (Base)
-            // D=2: Dual at r=1.0
-            // D=3: Octa at r=1.0
-            // D=4: Base+Dual at r=0.5
+                            // Sub-groups
+                            const isCorner = (ax === d && ay === d && az === d);
+                            // Face Center of the main cube (2,0,0) -> (d,0,0)
+                            const isFaceCenter = ((ax === d && ay === 0 && az === 0) || (ay === d && ax === 0 && az === 0) || (az === d && ax === 0 && ay === 0));
+                            // VE Vertices (1,1,0) -> (d/2, d/2, 0)
+                            const isVE = ((ax === h && ay === h && az === 0) || (ax === h && az === h && ay === 0) || (ay === h && az === h && ax === 0));
 
-            // Let's add shells for every integer step density > 3?
-            // Or just fill the space? 
-            // Generating points at k/N scale for k=1..N-1
+                            // Density 1: Core Skeleton (Minimal)
+                            if (density <= 1.5) {
+                                if (!isCenter && !isCorner && !isFaceCenter && !isVE) continue;
+                            }
+                            // Density 2: Enhanced Skeleton (Add Edge Midpoints of Cube)
+                            // Edge Mid: (2,2,0) -> (d, d, 0). 
+                            // This adds the midpoints of the frame edges.
+                            // Also maybe (1,1,1) -> (d/2, d/2, d/2)? (Sub-cube corners)
+                            else if (density <= 2.5) {
+                                const isEdgeMid = ((ax === d && ay === d && az === 0) || (ax === d && az === d && ay === 0) || (ay === d && az === d && ax === 0));
+                                const isSubCorner = (ax === h && ay === h && az === h);
 
-            for (let d = 4; d <= density; d++) {
-                // Simple harmonic scaling? 
-                // Let's use linear steps: scale = (density - k) / density? 
-                // Or just add specific shells.
+                                // Show Core + EdgeMids + SubCorners
+                                if (!isCenter && !isCorner && !isFaceCenter && !isVE && !isEdgeMid && !isSubCorner) continue;
+                            }
+                            // Density 3: Full Shells (No deep volume)
+                            else {
+                                if (!isOuterFrame && !isHalfShell && !isCenter) continue;
+                            }
+                        }
 
-                // Let's stick to the "Shells" concept of this app.
-                // We add a shell at scale = 1.0 / (d/2)? No.
-                // Let's add a shell at s = 1.0 - (d-1)*0.2 for consistency?
-                // Current D=4 added at 0.5.
+                        const v = new THREE.Vector3(x, y, z).multiplyScalar(step);
 
-                // Heuristic: Add Base+Dual at intervals.
-                // If D=4 -> 0.5.
-                // If D=5 -> 0.6? 0.4?
-                // Let's just generate linear interpolation shells.
-
-                const count = Math.floor(d / 2); // 4->2 shells?
-                // Let's behave line grid.
-                // If density is N, we have N divisions along edge.
-                // This implies N-1 internal points along edge.
-
-                // Let's just generate the full Td lattice subset?
-                // That's complex. 
-
-                // Fallback: Add shells at 1/2, 1/3, 2/3?
-                // Let's just add one shell per density step if > 3.
-                // D=4: 0.5
-                // D=5: 0.33, 0.66 ?
-
-                // Simpler: Just add layers at 1/d, 2/d ... (d-1)/d.
-
-                // The user complained "Density ends at 4".
-                // Let's ensure IF density >= 4, we execute a loop.
-
-                // We already have outer shell (1.0).
-                // We added 0.5 for D>=4.
-
-                if (d > 4) {
-                    const ratio = 1.0 / (d - 2); // Heuristic
-                    // Re-add Verts + Duals at new scale
-                    const s = 1.0 - ((d - 3) * 0.15);
-                    verts.forEach(v => add(v.clone().multiplyScalar(scale * s)));
-                    const duals = [
-                        new THREE.Vector3(-1, -1, -1),
-                        new THREE.Vector3(-1, 1, 1),
-                        new THREE.Vector3(1, -1, 1),
-                        new THREE.Vector3(1, 1, -1)
-                    ];
-                    duals.forEach(v => add(v.clone().multiplyScalar(scale * s)));
+                        // Deduplicate just in case (though loop is unique)
+                        const key = GeometryUtils.pointKey(v);
+                        if (!uniqueKeys.has(key)) {
+                            uniqueKeys.add(key);
+                            points.push(v);
+                        }
+                    }
                 }
-            }
-
-            // Ensure D=4 logic is preserved (0.5 scale) - actually checking logic above...
-            // The previous code block was specific.
-            // Let's replace ONLY the density >= 4 part.
-
-            // RE-IMPLEMENTING SPECIFICALLY:
-
-            // Density 4: 0.5 Scale
-            verts.forEach(v => add(v.clone().multiplyScalar(scale * 0.5)));
-            const duals = [
-                new THREE.Vector3(-1, -1, -1),
-                new THREE.Vector3(-1, 1, 1),
-                new THREE.Vector3(1, -1, 1),
-                new THREE.Vector3(1, 1, -1)
-            ];
-            duals.forEach(v => add(v.clone().multiplyScalar(scale * 0.5)));
-
-            // Density 5+: Add more inner shells
-            for (let k = 5; k <= density; k++) {
-                // arbitrary filling to make it look "dense"
-                const s = 1.0 / (k / 2.5);
-                verts.forEach(v => add(v.clone().multiplyScalar(scale * s)));
-                duals.forEach(v => add(v.clone().multiplyScalar(scale * s)));
             }
         }
 

@@ -299,7 +299,9 @@ function _generateSystematic(gridSize, pointDensity, options) {
     // 1. Generate Master Grid Points
     // Respect user density but enforce minimum 2 (Corners) to ensure volume.
     // If pointDensity is 1 (center only), we force 2 to get at least a cube.
-    const effectiveDensity = Math.max(2, pointDensity || 2);
+    // 1. Generate Master Grid Points
+    // Respect user density. Used to force min 2, but new parity logic (d*2) ensures density 1 is valid (d=2).
+    const effectiveDensity = Math.max(1, pointDensity || 1);
     const gridPoints = _defineGrid(gridSize, effectiveDensity, options);
 
     // 2. Identify Target Pair based on 'options.index'
@@ -684,87 +686,50 @@ function _defineGrid(gridSize, pointDensity, options = {}) {
         }
 
     } else if (symGroup === 'tetrahedral') {
+        // IVM / FCC Lattice Implementation (Mirrors GridSystem.js)
+        // We multiply density by 2 to ensure 'd' is even, guaranteeing corners (1,1,1) are included.
+        const density = Math.max(1, pointDensity) * 2;
         const half = (gridSize - 1) / 2;
         const radius = (half > 0 ? half : 1.0);
-        // T1 Vertices (Standard orientation for SpaceHarmony)
-        // (1,1,1), (1,-1,-1), (-1,1,-1), (-1,-1,1)
-        const t1Raw = [
-            new THREE.Vector3(1, 1, 1),
-            new THREE.Vector3(1, -1, -1),
-            new THREE.Vector3(-1, 1, -1),
-            new THREE.Vector3(-1, -1, 1)
-        ];
 
-        const density = Math.max(1, pointDensity);
+        // Match GridSystem logic: step = scale / density
+        const step = radius / density;
+        for (let x = -density; x <= density; x++) {
+            for (let y = -density; y <= density; y++) {
+                for (let z = -density; z <= density; z++) {
+                    if ((Math.abs(x) + Math.abs(y) + Math.abs(z)) % 2 === 0) {
 
-        for (let i = 1; i <= density; i++) {
-            // Linear scaling for density (shells)
-            // Or should we fill volume? For T, shells is better to match Icosa logic.
-            const s = i / density; // 1/1=1, or 1/2=0.5, 2/2=1
-            // WAIT. Cartesian grid (Cubic) uses linear steps.
-            // Icosa logic uses shells.
-            // Let's use shells for Tetrahedral to avoid "floating" points?
-            // Actually, for T, maybe we want internal volume points?
-            // GridSystem implementation used:
-            // T1 corners scaled by i/density.
-            // PLUS inverted T1 (Dual) ?? No, only T1.
+                        // Gradual/Shell Filter (Match GridSystem)
+                        if (pointDensity < 4.0) {
+                            const d = density;
+                            const h = d / 2;
+                            const ax = Math.abs(x), ay = Math.abs(y), az = Math.abs(z);
 
-            // To be safe and consistent with visual Frame (which is T1):
-            // Generate ONLY T1 vertices at scale.
+                            // Key Structural Groups
+                            const isCenter = (ax === 0 && ay === 0 && az === 0);
+                            const isOuterFrame = (ax === d || ay === d || az === d);
+                            const isHalfShell = (ax === h || ay === h || az === h);
 
-            t1Raw.forEach(v => {
-                // Map -1..1 to -half..half
-                const p = v.clone().multiplyScalar(radius * s);
-                // We need integer-ish coordinates if gridSize>2?
-                // defineGrid returns Vectors.
-                // SpaceHarmony standard is -1, 0, 1 for gridSize 3.
-                // radius is 1.
-                // s goes 0.5, 1.
-                // points: (0.5, 0.5, 0.5), (1,1,1).
-                points.push(p);
-            });
+                            const isCorner = (ax === d && ay === d && az === d);
+                            const isFaceCenter = ((ax === d && ay === 0 && az === 0) || (ay === d && ax === 0 && az === 0) || (az === d && ax === 0 && ay === 0));
+                            const isVE = ((ax === h && ay === h && az === 0) || (ax === h && az === h && ay === 0) || (ay === h && az === h && ax === 0));
 
-            // Add center only once if needed?
-            // If i/density starts at >0?
-            // If we want (0,0,0)? (0,0,0) is center of T.
-            // If density > 1, usually we want center?
-            // Icosa logic doesn't explicitly add center (0,0,0) unless 0 is a shell?
-            // Icosa logic: i starts at 1. s=1/N...1.
-            // (0,0,0) is not added.
+                            if (pointDensity <= 1.5) {
+                                if (!isCenter && !isCorner && !isFaceCenter && !isVE) continue;
+                            } else if (pointDensity <= 2.5) {
+                                const isEdgeMid = ((ax === d && ay === d && az === 0) || (ax === d && az === d && ay === 0) || (ay === d && az === d && ax === 0));
+                                const isSubCorner = (ax === h && ay === h && az === h);
+                                if (!isCenter && !isCorner && !isFaceCenter && !isVE && !isEdgeMid && !isSubCorner) continue;
+                            } else {
+                                if (!isOuterFrame && !isHalfShell && !isCenter) continue;
+                            }
+                        }
+
+                        points.push(new THREE.Vector3(x, y, z).multiplyScalar(step));
+                    }
+                }
+            }
         }
-
-        // Add Octahedron (Edge Centers) for Density >= 2
-        // These are (±1, 0, 0), (0, ±1, 0), (0, 0, ±1) scaled by radius.
-        if (pointDensity >= 2) {
-            const octaRaw = [
-                new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0),
-                new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, -1, 0),
-                new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1)
-            ];
-
-            // For Density 2, we just add them at s=1.0 (Edge midpoints).
-            // For Density > 2, we might want shells of them too?
-            // Let's stick to s=1.0 (Outer Shell) for now, as density loop below handles inner scaling?
-            // Actually, the loop above `for (let i = 1; i <= density; i++)` handles SHELLS of T1.
-            // We should probably add Octa shells too?
-            // Logic in GridSystem: "if density >= 2... add(v...scale)". Just once at full scale.
-            // Let's replicate GridSystem logic: Add Octa at Full Scale.
-
-            octaRaw.forEach(v => {
-                points.push(v.clone().multiplyScalar(radius));
-            });
-
-            // If Density >= 4, GridSystem adds inner shells.
-            // Let's implement robust filling for D >= 4 later if needed. 
-            // For now, D=2, 3 gives us T1 + Octa.
-        }
-
-        // Always add center (0,0,0) for T?
-        // Center allows T1->Center->T1 edges.
-        if (pointDensity > 1) {
-            points.push(new THREE.Vector3(0, 0, 0));
-        }
-
     } else {
         // 2. Standard Cartesian Grid (Default)
         const steps = [];
@@ -1040,7 +1005,7 @@ function _detectVolumeShells(faces) {
         for (let i = 0; i < face.length; i++) {
             const a = face[i];
             const b = face[(i + 1) % face.length];
-            const key = a < b ? `${a}-${b}` : `${b}-${a}`;
+            const key = a < b ? `${a} -${b} ` : `${b} -${a} `;
             if (!edgeToFaces.has(key)) edgeToFaces.set(key, []);
             edgeToFaces.get(key).push(fIdx);
         }
@@ -1100,7 +1065,7 @@ function _detectVolumeShells(faces) {
             for (let k = 0; k < face.length; k++) {
                 const a = face[k];
                 const b = face[(k + 1) % face.length];
-                const key = a < b ? `${a}-${b}` : `${b}-${a}`;
+                const key = a < b ? `${a} -${b} ` : `${b} -${a} `;
                 componentEdges.set(key, (componentEdges.get(key) || 0) + 1);
             }
         });
@@ -1142,7 +1107,7 @@ function _completeForm(form, options = {}) {
     // Build Adjacency
     const adjacency = new Map(); // index -> Set(index)
     const lineSet = new Set();
-    const getLineKey = (a, b) => (a < b ? `${a}-${b}` : `${b}-${a}`);
+    const getLineKey = (a, b) => (a < b ? `${a} -${b} ` : `${b} -${a} `);
 
     form.lines.forEach(l => {
         if (!adjacency.has(l.a)) adjacency.set(l.a, new Set());

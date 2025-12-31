@@ -291,7 +291,10 @@ export class App {
                 minVolumes: config.minVolumes || 0,
                 gridSize: 3, // Keep internal grid size 3 for generator logic
 
-                pointDensity: this.gridDivisions + 1, // Respect user density also for Ico
+                // Correct Density logic based on System Type to ensure Worker Grid matches App Grid
+                // Cubic System: Worker expects 'Point Count' (Divisions + 1)
+                // Tetrahedral/Icosahedral: Worker implementation expects 'Layers/Divisions' (Divisions)
+                pointDensity: (this.gridSystem.system === 'cubic') ? (this.gridDivisions + 1) : this.gridDivisions,
                 options: {
                     mode: config.mode,
                     // FORCE Correct Symmetry Group if System is Tetrahedral
