@@ -733,61 +733,59 @@ function _defineGrid(gridSize, pointDensity, options = {}) {
             // (0,0,0) is not added.
         }
 
-    }
+        // Add Octahedron (Edge Centers) for Density >= 2
+        // These are (±1, 0, 0), (0, ±1, 0), (0, 0, ±1) scaled by radius.
+        if (pointDensity >= 2) {
+            const octaRaw = [
+                new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0),
+                new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, -1, 0),
+                new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1)
+            ];
 
-    // Add Octahedron (Edge Centers) for Density >= 2
-    // These are (±1, 0, 0), (0, ±1, 0), (0, 0, ±1) scaled by radius.
-    if (pointDensity >= 2) {
-        const octaRaw = [
-            new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0),
-            new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, -1, 0),
-            new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1)
-        ];
+            // For Density 2, we just add them at s=1.0 (Edge midpoints).
+            // For Density > 2, we might want shells of them too?
+            // Let's stick to s=1.0 (Outer Shell) for now, as density loop below handles inner scaling?
+            // Actually, the loop above `for (let i = 1; i <= density; i++)` handles SHELLS of T1.
+            // We should probably add Octa shells too?
+            // Logic in GridSystem: "if density >= 2... add(v...scale)". Just once at full scale.
+            // Let's replicate GridSystem logic: Add Octa at Full Scale.
 
-        // For Density 2, we just add them at s=1.0 (Edge midpoints).
-        // For Density > 2, we might want shells of them too?
-        // Let's stick to s=1.0 (Outer Shell) for now, as density loop below handles inner scaling?
-        // Actually, the loop above `for (let i = 1; i <= density; i++)` handles SHELLS of T1.
-        // We should probably add Octa shells too?
-        // Logic in GridSystem: "if density >= 2... add(v...scale)". Just once at full scale.
-        // Let's replicate GridSystem logic: Add Octa at Full Scale.
+            octaRaw.forEach(v => {
+                points.push(v.clone().multiplyScalar(radius));
+            });
 
-        octaRaw.forEach(v => {
-            points.push(v.clone().multiplyScalar(radius));
-        });
-
-        // If Density >= 4, GridSystem adds inner shells.
-        // Let's implement robust filling for D >= 4 later if needed. 
-        // For now, D=2, 3 gives us T1 + Octa.
-    }
-
-    // Always add center (0,0,0) for T?
-    // Center allows T1->Center->T1 edges.
-    if (pointDensity > 1) {
-        points.push(new THREE.Vector3(0, 0, 0));
-    }
-
-} else {
-    // 2. Standard Cartesian Grid (Default)
-    const steps = [];
-    if (pointDensity === 1) {
-        steps.push(0);
-    } else {
-        for (let i = 0; i < pointDensity; i++) {
-            steps.push(-half + i * (gridSize - 1) / (pointDensity - 1));
+            // If Density >= 4, GridSystem adds inner shells.
+            // Let's implement robust filling for D >= 4 later if needed. 
+            // For now, D=2, 3 gives us T1 + Octa.
         }
-    }
 
-    for (const x of steps) {
-        for (const y of steps) {
-            for (const z of steps) {
-                points.push(new THREE.Vector3(x, y, z));
+        // Always add center (0,0,0) for T?
+        // Center allows T1->Center->T1 edges.
+        if (pointDensity > 1) {
+            points.push(new THREE.Vector3(0, 0, 0));
+        }
+
+    } else {
+        // 2. Standard Cartesian Grid (Default)
+        const steps = [];
+        if (pointDensity === 1) {
+            steps.push(0);
+        } else {
+            for (let i = 0; i < pointDensity; i++) {
+                steps.push(-half + i * (gridSize - 1) / (pointDensity - 1));
+            }
+        }
+
+        for (const x of steps) {
+            for (const y of steps) {
+                for (const z of steps) {
+                    points.push(new THREE.Vector3(x, y, z));
+                }
             }
         }
     }
-}
 
-return points;
+    return points;
 }
 
 function _generateLinePath(gridPoints, options) {

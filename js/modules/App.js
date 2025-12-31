@@ -201,6 +201,13 @@ export class App {
                 const el = this.uiManager.elements[id];
                 if (el) el.checked = false;
             });
+
+            // Enable 180-degree rotations (2 steps) for Tetrahedral Td symmetry
+            // This maps (1,1,1) -> (1,-1,-1) without generating the Dual (which needs 90 deg / 4 steps)
+            if (this.uiManager.elements['rotation-axis']) {
+                this.uiManager.elements['rotation-axis'].value = 'all';
+            }
+            this.symmetry.settings.rotation = { axis: 'all', steps: 2 };
         } else {
             // Cubic defaults
             this.symmetry.settings.reflections = { xy: true, yz: true, zx: true };
@@ -1598,6 +1605,9 @@ export class App {
         if (this.gridSystem.system === 'icosahedral' && uiState.reflections.fullIcosa) {
             // Override manual settings with full Icosahedral group
             transforms = this.symmetry.getGroupMatrices('icosahedral');
+        } else if (this.gridSystem.system === 'tetrahedral') {
+            // Force correct Td group (including 3-fold diagonals) which UI settings cannot express purely via checkboxes
+            transforms = this.symmetry.getGroupMatrices('tetrahedral');
         } else {
             transforms = this.symmetry.getTransforms();
         }
