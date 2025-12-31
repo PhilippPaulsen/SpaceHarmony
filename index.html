@@ -106,6 +106,7 @@
               <span class="control-label">System</span>
               <select id="coord-system" class="select-field" style="max-width: 140px;">
                 <option value="cubic">Cubic</option>
+                <option value="tetrahedral">Tetrahedral</option>
                 <option value="icosahedral">Icosahedral</option>
               </select>
             </div>
@@ -236,6 +237,27 @@
                   <input type="checkbox" id="reflection-zx" checked />
                   <span class="material-icons-outlined" aria-hidden="true">flip</span>
                   <span class="icon-hint">ZX</span>
+                </label>
+              </div>
+
+              <div id="tetrahedral-symmetries" class="icon-toggle-grid" style="display:none;">
+                <label class="icon-toggle" data-i18n-title="ui.reflection.xy_diag" title="Reflection XY Diagonal (x=y)"
+                  aria-label="Reflection XY Diagonal">
+                  <input type="checkbox" id="reflection-xy-diag" />
+                  <span class="material-icons-outlined" aria-hidden="true">flip</span>
+                  <span class="icon-hint">XY-D</span>
+                </label>
+                <label class="icon-toggle" data-i18n-title="ui.reflection.yz_diag" title="Reflection YZ Diagonal (y=z)"
+                  aria-label="Reflection YZ Diagonal">
+                  <input type="checkbox" id="reflection-yz-diag" />
+                  <span class="material-icons-outlined" aria-hidden="true">flip</span>
+                  <span class="icon-hint">YZ-D</span>
+                </label>
+                <label class="icon-toggle" data-i18n-title="ui.reflection.zx_diag" title="Reflection ZX Diagonal (z=x)"
+                  aria-label="Reflection ZX Diagonal">
+                  <input type="checkbox" id="reflection-zx-diag" />
+                  <span class="material-icons-outlined" aria-hidden="true">flip</span>
+                  <span class="icon-hint">ZX-D</span>
                 </label>
               </div>
 

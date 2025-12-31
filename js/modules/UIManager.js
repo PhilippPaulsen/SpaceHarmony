@@ -18,7 +18,8 @@ export class UIManager {
             'toggle-points', 'toggle-lines', 'toggle-show-closed', 'toggle-cube-frame',
             'toggle-curved-lines', 'toggle-curved-surfaces', 'curve-convexity',
             'reflection-xy', 'reflection-yz', 'reflection-zx', 'toggle-inversion',
-            'toggle-full-icosa', 'cubic-symmetries', 'icosahedral-symmetries',
+            'reflection-xy-diag', 'reflection-yz-diag', 'reflection-zx-diag',
+            'toggle-full-icosa', 'cubic-symmetries', 'icosahedral-symmetries', 'tetrahedral-symmetries',
             'rotation-axis',
             'rotoreflection-axis', 'rotoreflection-plane', 'rotoreflection-angle', 'rotoreflection-count', 'rotoreflection-enabled', 'rotoreflection-connect',
             'translation-axis', 'translation-count', 'translation-step', 'translation-connect',
@@ -87,6 +88,11 @@ export class UIManager {
         this._bindChange('reflection-xy', 'onSymmetryChange');
         this._bindChange('reflection-yz', 'onSymmetryChange');
         this._bindChange('reflection-zx', 'onSymmetryChange');
+
+        this._bindChange('reflection-xy-diag', 'onSymmetryChange');
+        this._bindChange('reflection-yz-diag', 'onSymmetryChange');
+        this._bindChange('reflection-zx-diag', 'onSymmetryChange');
+
         this._bindChange('toggle-inversion', 'onSymmetryChange');
         this._bindChange('toggle-full-icosa', 'onSymmetryChange');
 
@@ -148,6 +154,8 @@ export class UIManager {
                     // Trigger change to set values
                     presetSelect.dispatchEvent(new Event('change'));
                 }
+            } else if (currentSys === 'tetrahedral') {
+                if (symSelect) symSelect.value = 'tetrahedral';
             } else if (currentSys === 'cubic') {
                 if (symSelect && symSelect.value === 'icosahedral') symSelect.value = 'cubic';
             }
@@ -267,7 +275,11 @@ export class UIManager {
             reflections: {
                 xy: this._getValue('reflection-xy'),
                 yz: this._getValue('reflection-yz'),
+                yz: this._getValue('reflection-yz'),
                 zx: this._getValue('reflection-zx'),
+                xy_diag: this._getValue('reflection-xy-diag'),
+                yz_diag: this._getValue('reflection-yz-diag'),
+                zx_diag: this._getValue('reflection-zx-diag'),
                 inversion: this._getValue('toggle-inversion'),
                 fullIcosa: this._getValue('toggle-full-icosa')
             },
@@ -528,13 +540,18 @@ export class UIManager {
     updateSymmetryUI(system) {
         const cubicDiv = this.elements['cubic-symmetries'];
         const icoDiv = this.elements['icosahedral-symmetries'];
+        const tetraDiv = this.elements['tetrahedral-symmetries'];
+
+        if (cubicDiv) cubicDiv.style.display = 'none';
+        if (icoDiv) icoDiv.style.display = 'none';
+        if (tetraDiv) tetraDiv.style.display = 'none';
 
         if (system === 'icosahedral') {
-            if (cubicDiv) cubicDiv.style.display = 'none';
             if (icoDiv) icoDiv.style.display = 'grid';
+        } else if (system === 'tetrahedral') {
+            if (tetraDiv) tetraDiv.style.display = 'grid';
         } else {
             if (cubicDiv) cubicDiv.style.display = 'grid';
-            if (icoDiv) icoDiv.style.display = 'none';
         }
     }
 

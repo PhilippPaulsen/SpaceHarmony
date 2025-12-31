@@ -183,6 +183,24 @@ export class App {
             if (this.uiManager.elements['toggle-show-closed']) {
                 this.uiManager.elements['toggle-show-closed'].checked = true;
             }
+        } else if (system === 'tetrahedral') {
+            // Tetrahedral Defaults
+            // Use DIAGONAL symmetries for Td
+            this.symmetry.settings.reflections = {
+                xy: false, yz: false, zx: false,
+                xy_diag: true, yz_diag: true, zx_diag: true
+            };
+            this.uiManager.updateSymmetryUI('tetrahedral');
+
+            // Update UI checkboxes to match
+            ['reflection-xy-diag', 'reflection-yz-diag', 'reflection-zx-diag'].forEach(id => {
+                const el = this.uiManager.elements[id];
+                if (el) el.checked = true;
+            });
+            ['reflection-xy', 'reflection-yz', 'reflection-zx', 'toggle-inversion'].forEach(id => {
+                const el = this.uiManager.elements[id];
+                if (el) el.checked = false;
+            });
         } else {
             // Cubic defaults
             this.symmetry.settings.reflections = { xy: true, yz: true, zx: true };
@@ -227,7 +245,8 @@ export class App {
 
 
     _initWorker() {
-        this.worker = new Worker('js/workers/generationWorker.js', { type: 'module' });
+        // Cache bust the worker to ensure new generator logic is loaded
+        this.worker = new Worker(`js/workers/generationWorker.js?v=${Date.now()}`, { type: 'module' });
         this.worker.onerror = (e) => {
             console.error('Worker Script Error Event:', e);
             const msg = e.message || 'Unknown Worker Error';
@@ -268,7 +287,9 @@ export class App {
                 pointDensity: this.gridDivisions + 1, // Respect user density also for Ico
                 options: {
                     mode: config.mode,
-                    symmetryGroup: config.symmetryGroup,
+                    // FORCE Correct Symmetry Group if System is Tetrahedral
+                    // Users might have stale UI state or presets.
+                    symmetryGroup: (this.gridSystem.system === 'tetrahedral') ? 'tetrahedral' : config.symmetryGroup,
                     maxEdges: config.maxEdges,
                     // User Request: ALWAYS 1 Single Connection (Edge Orbit)
                     seedMinLength: 1,

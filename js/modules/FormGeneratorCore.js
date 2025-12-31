@@ -31,7 +31,7 @@ export class Form {
     }
 }
 
-export function generateForm(gridSize, pointDensity, options = {}) {
+export function generateForm(gridSize = 3, pointDensity = 2, options = {}) {
     const form = new Form();
     const gridPoints = _defineGrid(gridSize, pointDensity, options);
 
@@ -240,7 +240,9 @@ function _generateSymmetricForm(gridPoints, options, symmetryEngine) {
                     // Or just any shell? 
                     // Let's filter slightly to avoid cross-grid chaos lines, but allow mixing shells.
                     // Actually, just allowing any neighbor in the 'shells' map is good.
-                    if (d < 4.0) { // Arbitrary large constraint
+                    // Tetrahedron edge length squared is 8.0 (from 1,1,1 to 1,-1,-1).
+                    // So 4.0 was too small! Increased to 12.0 to be safe.
+                    if (d < 12.0) {
                         candidates.push(j);
                     }
                 }
@@ -678,27 +680,111 @@ function _defineGrid(gridSize, pointDensity, options = {}) {
             }
         }
 
-    } else {
-        // 2. Standard Cartesian Grid (Default)
-        const steps = [];
-        if (pointDensity === 1) {
-            steps.push(0);
-        } else {
-            for (let i = 0; i < pointDensity; i++) {
-                steps.push(-half + i * (gridSize - 1) / (pointDensity - 1));
-            }
+    } else if (symGroup === 'tetrahedral') {
+        const half = (gridSize - 1) / 2;
+        const radius = (half > 0 ? half : 1.0);
+        // T1 Vertices (Standard orientation for SpaceHarmony)
+        // (1,1,1), (1,-1,-1), (-1,1,-1), (-1,-1,1)
+        const t1Raw = [
+            new THREE.Vector3(1, 1, 1),
+            new THREE.Vector3(1, -1, -1),
+            new THREE.Vector3(-1, 1, -1),
+            new THREE.Vector3(-1, -1, 1)
+        ];
+
+        const density = Math.max(1, pointDensity);
+
+        for (let i = 1; i <= density; i++) {
+            // Linear scaling for density (shells)
+            // Or should we fill volume? For T, shells is better to match Icosa logic.
+            const s = i / density; // 1/1=1, or 1/2=0.5, 2/2=1
+            // WAIT. Cartesian grid (Cubic) uses linear steps.
+            // Icosa logic uses shells.
+            // Let's use shells for Tetrahedral to avoid "floating" points?
+            // Actually, for T, maybe we want internal volume points?
+            // GridSystem implementation used:
+            // T1 corners scaled by i/density.
+            // PLUS inverted T1 (Dual) ?? No, only T1.
+
+            // To be safe and consistent with visual Frame (which is T1):
+            // Generate ONLY T1 vertices at scale.
+
+            t1Raw.forEach(v => {
+                // Map -1..1 to -half..half
+                const p = v.clone().multiplyScalar(radius * s);
+                // We need integer-ish coordinates if gridSize>2?
+                // defineGrid returns Vectors.
+                // SpaceHarmony standard is -1, 0, 1 for gridSize 3.
+                // radius is 1.
+                // s goes 0.5, 1.
+                // points: (0.5, 0.5, 0.5), (1,1,1).
+                points.push(p);
+            });
+
+            // Add center only once if needed?
+            // If i/density starts at >0?
+            // If we want (0,0,0)? (0,0,0) is center of T.
+            // If density > 1, usually we want center?
+            // Icosa logic doesn't explicitly add center (0,0,0) unless 0 is a shell?
+            // Icosa logic: i starts at 1. s=1/N...1.
+            // (0,0,0) is not added.
         }
 
-        for (const x of steps) {
-            for (const y of steps) {
-                for (const z of steps) {
-                    points.push(new THREE.Vector3(x, y, z));
-                }
-            }
+    }
+
+    // Add Octahedron (Edge Centers) for Density >= 2
+    // These are (±1, 0, 0), (0, ±1, 0), (0, 0, ±1) scaled by radius.
+    if (pointDensity >= 2) {
+        const octaRaw = [
+            new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0),
+            new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, -1, 0),
+            new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1)
+        ];
+
+        // For Density 2, we just add them at s=1.0 (Edge midpoints).
+        // For Density > 2, we might want shells of them too?
+        // Let's stick to s=1.0 (Outer Shell) for now, as density loop below handles inner scaling?
+        // Actually, the loop above `for (let i = 1; i <= density; i++)` handles SHELLS of T1.
+        // We should probably add Octa shells too?
+        // Logic in GridSystem: "if density >= 2... add(v...scale)". Just once at full scale.
+        // Let's replicate GridSystem logic: Add Octa at Full Scale.
+
+        octaRaw.forEach(v => {
+            points.push(v.clone().multiplyScalar(radius));
+        });
+
+        // If Density >= 4, GridSystem adds inner shells.
+        // Let's implement robust filling for D >= 4 later if needed. 
+        // For now, D=2, 3 gives us T1 + Octa.
+    }
+
+    // Always add center (0,0,0) for T?
+    // Center allows T1->Center->T1 edges.
+    if (pointDensity > 1) {
+        points.push(new THREE.Vector3(0, 0, 0));
+    }
+
+} else {
+    // 2. Standard Cartesian Grid (Default)
+    const steps = [];
+    if (pointDensity === 1) {
+        steps.push(0);
+    } else {
+        for (let i = 0; i < pointDensity; i++) {
+            steps.push(-half + i * (gridSize - 1) / (pointDensity - 1));
         }
     }
 
-    return points;
+    for (const x of steps) {
+        for (const y of steps) {
+            for (const z of steps) {
+                points.push(new THREE.Vector3(x, y, z));
+            }
+        }
+    }
+}
+
+return points;
 }
 
 function _generateLinePath(gridPoints, options) {

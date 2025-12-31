@@ -158,7 +158,35 @@ export class SceneManager {
 
             this.cubeFrame = new THREE.LineSegments(geometry, material);
             this.scene.add(this.cubeFrame);
+            this.scene.add(this.cubeFrame);
             return; // Skip the BoxGeometry path
+        } else if (type === 'tetrahedral') {
+            const size = CONFIG.CUBE_HALF_SIZE;
+            const vertices = [
+                new THREE.Vector3(1, 1, 1),
+                new THREE.Vector3(-1, -1, 1),
+                new THREE.Vector3(-1, 1, -1),
+                new THREE.Vector3(1, -1, -1)
+            ].map(v => v.multiplyScalar(size));
+
+            // Edges: 0-1, 0-2, 0-3, 1-2, 1-3, 2-3
+            const indices = [
+                0, 1, 0, 2, 0, 3,
+                1, 2, 1, 3,
+                2, 3
+            ];
+
+            geometry = new THREE.BufferGeometry().setFromPoints(vertices);
+            geometry.setIndex(indices);
+
+            // Tetrahedral Frame
+            const theme = document.documentElement.dataset.theme || 'light';
+            const color = theme === 'dark' ? 0x444444 : 0xcccccc;
+            const material = new THREE.LineBasicMaterial({ color: color });
+
+            this.cubeFrame = new THREE.LineSegments(geometry, material);
+            this.scene.add(this.cubeFrame);
+            return;
         } else {
             const size = CONFIG.CUBE_HALF_SIZE;
             geometry = new THREE.BoxGeometry(size * 2, size * 2, size * 2);
