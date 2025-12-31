@@ -291,7 +291,10 @@ function _generateSymmetricForm(gridPoints, options, symmetryEngine) {
  */
 function _generateSystematic(gridSize, pointDensity, options) {
     const symmetry = new SymmetryEngine();
-    const matrices = symmetry.getSymmetryGroup('cubic'); // Full Octahedral
+    // Default to cubic if not specified, but respect options
+    const rawGroup = options.symmetryGroup || 'cubic';
+    // Ensure we map 'tetrahedral' correctly if passed
+    const matrices = symmetry.getSymmetryGroup(rawGroup);
 
     // 1. Generate Master Grid Points
     // Respect user density but enforce minimum 2 (Corners) to ensure volume.
