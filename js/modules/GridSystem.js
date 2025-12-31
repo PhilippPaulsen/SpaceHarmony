@@ -78,8 +78,14 @@ export class GridSystem {
         ];
 
         // Add Icosahedron shell (normalized and scaled)
+        // User requested size matching with Cube/Tetra.
+        // Cube Corners are at dist = sqrt(3) * scale.
+        // Previously we used dist = 1.0 * scale.
+        // We now align them to the same circumsphere: scale * sqrt(3).
+        const isoScale = scale * Math.sqrt(3);
+
         icoRaw.forEach(v => {
-            const p = v.clone().normalize().multiplyScalar(scale);
+            const p = v.clone().normalize().multiplyScalar(isoScale);
             add(p);
         });
 

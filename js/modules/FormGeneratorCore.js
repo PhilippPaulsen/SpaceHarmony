@@ -639,7 +639,8 @@ function _defineGrid(gridSize, pointDensity, options = {}) {
         const addPoints = (vectors, scaleMultiplier = 1.0) => {
             vectors.forEach(v => {
 
-                const p = v.clone().normalize().multiplyScalar(radius * scaleMultiplier);
+                // Align with App: Icosahedron radius = radius * sqrt(3)
+                const p = v.clone().normalize().multiplyScalar(radius * scaleMultiplier * Math.sqrt(3));
                 let exists = false;
                 for (let existing of points) {
                     if (existing.distanceToSquared(p) < 0.0001) { exists = true; break; }

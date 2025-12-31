@@ -108,6 +108,7 @@ export class SceneManager {
         if (type === 'icosahedral') {
             // Construct manually to ensure 100% alignment with GridSystem points
             const scale = CONFIG.CUBE_HALF_SIZE;
+            const effectiveScale = scale * Math.sqrt(3); // Match the new grid scaling
             const phi = (1 + Math.sqrt(5)) / 2;
 
             // Same raw vertices as GridSystem
@@ -118,28 +119,18 @@ export class SceneManager {
                 new THREE.Vector3(t, 0, -1), new THREE.Vector3(t, 0, 1), new THREE.Vector3(-t, 0, -1), new THREE.Vector3(-t, 0, 1)
             ];
 
-            const vertices = rawVertices.map(v => v.clone().normalize().multiplyScalar(scale));
+            const vertices = rawVertices.map(v => v.clone().normalize().multiplyScalar(effectiveScale));
 
             // Create convex hull edges or explicit connections
             // Explicit Icosahedron Edges (indices)
-            // Derived from proximity (~1.05 * scale if normalized on unit sphere? No, distance is 2/sqrt(1+phi^2))
-            // Normalized edge length is constant. 
-            // Let's us geometry to find edges by distance
+            // Derived from proximity (~1.05 * R)
             geometry = new THREE.BufferGeometry().setFromPoints(vertices);
-            // Use ConvexHull logic or just hardcode indices? Hardcoding is tedious.
-            // Easier: Use IcosahedronGeometry to get indices, but overwrite positions!
-            const baseGeo = new THREE.IcosahedronGeometry(1, 0); // Radius 1
-            // The order of vertices in IcosahedronGeometry(1,0) MATCHES the standard construction (usually).
-            // But to be safe, let's SNAP our vertices to the closest vertex in baseGeo and copy index? 
-            // Or just use baseGeo and assume it's correct? 
-            // The mismatch suggests baseGeo IS different.
-            // So I should use my vertices.
-            // And compute edges by distance.
+
             const indices = [];
-            const threshold = 2.0 * scale / Math.sqrt(1 + phi * phi) + 0.01; // Edge length + tolerance? 
-            // Distance on unit sphere is ~1.05. 
-            // 2 / sqrt(1 + 2.618) = 2 / 1.9 = 1.05. Correct.
-            const distSqThreshold = (1.1 * 1.1) * scale * scale; // slightly larger than 1.05^2
+
+            // Distance on unit sphere is ~1.05. Scale it up by effectiveScale.
+            // 1.1 is a safe upper bound factor for 1.05
+            const distSqThreshold = (1.1 * 1.1) * effectiveScale * effectiveScale;
 
             for (let i = 0; i < vertices.length; i++) {
                 for (let j = i + 1; j < vertices.length; j++) {
