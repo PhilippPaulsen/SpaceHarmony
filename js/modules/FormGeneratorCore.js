@@ -856,106 +856,93 @@ function _validateForm(form) {
     const cycles = [];
     const cycleSet = new Set(); // hash to deduplicate: "sorted_indices"
 
-    // Detect loops of length 3 (triangles) and 4 (squares)
+    // Unified Cycle Detection (Lengths 3, 4, 5, 6)
+    // Supports Triangles, Squares, Pentagons (Dodecahedron), Hexagons (Truncated forms)
     // iterate all vertices
     for (let i = 0; i < points.length; i++) {
-        const neighbors = adj.get(i);
-        if (!neighbors) continue;
+        // Optimization: Only start searches from nodes that have neighbors
+        const rootNeighbors = adj.get(i);
+        if (!rootNeighbors || rootNeighbors.length < 2) continue;
 
-        // pairs of neighbors
-        for (let j = 0; j < neighbors.length; j++) {
-            for (let k = j + 1; k < neighbors.length; k++) {
-                const n1 = neighbors[j];
-                const n2 = neighbors[k];
-
-                // Check Triangle (3-cycle): n1 connected to n2 directly?
-                if (adj.get(n1).includes(n2)) {
-                    // Found 3-cycle: i - n1 - n2 - i
-                    const cycle = [i, n1, n2].sort((a, b) => a - b);
-                    const key = cycle.join('-');
-                    if (!cycleSet.has(key)) {
-                        cycleSet.add(key);
-                        cycles.push(cycle); // storing indices
-                    }
-                }
-
-                // Check Square (4-cycle): do n1 and n2 have a common neighbor X (other than i)?
-                // n1 neighbors:
-                const neighbors1 = adj.get(n1);
-                for (const x of neighbors1) {
-                    if (x === i) continue; // back to start
-                    if (x === n2) continue; // this would be the triangle check above
-
-                    // Does n2 connect to x?
-                    if (adj.get(n2).includes(x)) {
-                        // Found 4-cycle: i - n1 - x - n2 - i
-
-                        // CHECK FOR GHOST FACE:
-                        // If there is a diagonal connection (i-x or n1-n2), this 4-cycle is actually 2 triangles.
-                        // We should NOT count the outer loop as a face.
-                        const hasDiag1 = adj.get(i).includes(x);
-                        const hasDiag2 = adj.get(n1).includes(n2);
-
-                        if (hasDiag1 || hasDiag2) continue; // Skip composite face
-
-                        const cycle = [i, n1, x, n2].sort((a, b) => a - b);
-                        const key = cycle.join('-');
-                        if (!cycleSet.has(key)) {
-                            cycleSet.add(key);
-                            cycles.push(cycle);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Volume Check (Closed Shells)
-    // We pass the detected cycles (faces) to find closed volumes (e.g. Cubes, Tetrahedrons)
-
-    // 3. Detect Pentagons (5-cycles) - Essential for Icosahedral
-    // Iterate points again or re-use logic? Iterating points is safer.
-    // Optimization: Only check if we are in Icosahedral mode? No, geometry is universal.
-    for (let i = 0; i < points.length; i++) {
-        const neighbors = adj.get(i);
-        if (!neighbors) continue;
-
-        // Depth-first search for length 5? Or nested loops?
-        // Nested loops (like before) are rigid but predictable.
-        // A -> B -> C -> D -> E -> A
-
-        // Let's use simplified DFS for specific length to avoid 5-level nesting indentation hell
-        const findPath = (curr, start, depth, path) => {
-            if (depth === 5) {
+        const findCycles = (curr, start, depth, path) => {
+            // Check for loop closure
+            // We only care about cycles of length 3 to 6
+            if (depth >= 3) {
                 if (adj.get(curr).includes(start)) {
-                    // Found cycle
-                    const cycle = [...path].sort((a, b) => a - b);
-                    const key = cycle.join('-');
+                    // Found a cycle closed back to start
+                    const cycle = [...path]; // Preserves winding order for planarity check?
+                    // Actually, sorting indices creates a canonical Key, but destroys winding for Normal calc.
+                    // However, we need a canonical Key to deduplicate (Triangle 1-2-3 is same as 2-3-1).
+                    // We store "Sorted Indices" as key.
+                    // But we keep "Winding Order" for Geom check?
+                    // GeometryUtils.isPlanar handles point cloud, so order less critical there but helps.
+
+                    const sortedCycle = [...cycle].sort((a, b) => a - b);
+                    const key = sortedCycle.join('-');
+
                     if (!cycleSet.has(key)) {
-                        // Check planarity
-                        // Need point vectors
+                        // Check Planarity & Validity
+                        // Use original path for points to keep potential winding
                         const vecPoints = cycle.map(idx => points[idx]);
-                        if (GeometryUtils.isPlanar(vecPoints, 0.05)) { // Assuming isPlanar accepts array of Vectors
-                            cycleSet.add(key);
-                            cycles.push(cycle);
+
+                        // Planarity Check
+                        // Relaxed tolerance for larger faces (accumulated error)
+                        if (GeometryUtils.isPlanar(vecPoints, 0.1)) {
+                            // Check for internal diagonals (Ghost Faces)
+                            // A 4-cycle might be 2 fused triangles.
+                            // A 5-cycle might be a triangle + quad.
+                            // We reject cycles that contain "internal chords" (edges between non-adjacent vertices).
+                            // e.g. Square 1-2-3-4. If 1-3 exists, it's 2 triangles. Reject Square.
+
+                            let isElementary = true;
+                            // Check all non-adjacent pairs in the cycle
+                            for (let m = 0; m < cycle.length; m++) {
+                                for (let n = m + 2; n < cycle.length; n++) {
+                                    // Adjacent if n == m+1 or (m=0, n=len-1)
+                                    if (m === 0 && n === cycle.length - 1) continue;
+
+                                    const u = cycle[m];
+                                    const v = cycle[n];
+                                    if (adj.get(u).includes(v)) {
+                                        isElementary = false;
+                                        break;
+                                    }
+                                }
+                                if (!isElementary) break;
+                            }
+
+                            if (isElementary) {
+                                cycleSet.add(key);
+                                cycles.push(sortedCycle);
+                            }
                         }
                     }
                 }
-                return;
             }
 
-            const neis = adj.get(curr);
-            for (const n of neis) {
-                if (n > start && !path.includes(n)) { // Enforce ordering > start to dedupe rotations, uniques
-                    findPath(n, start, depth + 1, [...path, n]);
+            // Recurse (Max Depth 6)
+            if (depth < 6) {
+                const neighbors = adj.get(curr);
+                for (const n of neighbors) {
+                    // Enforce Canonical Ordering: only visit nodes > start (except for closure check handled above)
+                    // This prevents finding the same cycle N times (rotations) AND reverse cycles.
+                    // Path must strictly follow nodes > start? 
+                    // No, that restricts the graph traversal too much (e.g. 1 -> 10 -> 2 -> 1). 2 > 1 is true. 2 < 10 is true.
+                    // The standard canonical restriction is: Start node is the Smallest node in the cycle.
+                    // So we only visit n if n > start.
+                    if (n > start) {
+                        // And don't revisit nodes in current path
+                        if (!path.includes(n)) {
+                            findCycles(n, start, depth + 1, [...path, n]);
+                        }
+                    }
                 }
             }
         };
 
-        // Trigger search
-        // We only need to find cycles starting at 'i' where 'i' is the smallest index in the cycle to avoid dupes/rotations
-        // findPath enforces n > start
-        findPath(i, i, 1, [i]);
+        // Start DFS from i
+        // path starts with [i]
+        findCycles(i, i, 1, [i]);
     }
 
     const volumes = _detectVolumeShells(cycles);

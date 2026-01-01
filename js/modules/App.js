@@ -2252,79 +2252,85 @@ export class App {
         if (!this.adjacencyGraph.size) return faces;
 
         const keys = Array.from(this.adjacencyGraph.keys());
+        // Sort keys to ensure stable canonical ordering comparisons
+        keys.sort();
 
-        // 1. Triangles
-        for (const keyA of keys) {
-            const neighborsA = this.adjacencyGraph.get(keyA);
-            if (!neighborsA) continue;
-            for (const keyB of neighborsA) {
-                if (keyB < keyA) continue;
-                const neighborsB = this.adjacencyGraph.get(keyB);
-                if (!neighborsB) continue;
-                for (const keyC of neighborsB) {
-                    if (keyC < keyB) continue;
-                    if (neighborsA.has(keyC)) {
-                        const faceKeys = [keyA, keyB, keyC];
-                        const faceKey = GeometryUtils.faceKeyFromKeys(faceKeys);
-                        if (!foundFaces.has(faceKey)) {
-                            faces.push(faceKeys);
-                            foundFaces.add(faceKey);
-                        }
-                    }
-                }
-            }
-        }
+        // 3. Unified Cycle Detection (DFS) for Lengths 3-6
+        // Supports Triangles, Squares, Pentagons, Hexagons
 
-        // 2. Planar Quads
-        for (let i = 0; i < keys.length; i++) {
-            const keyA = keys[i];
-            for (let j = i + 1; j < keys.length; j++) {
-                const keyC = keys[j];
-                // Skip if connected (triangle)
-                if (this.adjacencyGraph.get(keyA)?.has(keyC)) continue;
+        for (const startKey of keys) {
+            const rootNeighbors = this.adjacencyGraph.get(startKey);
+            if (!rootNeighbors || rootNeighbors.size < 2) continue;
 
-                const neighborsA = this.adjacencyGraph.get(keyA);
-                const neighborsC = this.adjacencyGraph.get(keyC);
-                if (!neighborsA || !neighborsC) continue;
+            // DFS Function
+            const findCycles = (currKey, depth, path) => {
+                // Check Loop Closure
+                if (depth >= 3) {
+                    if (this.adjacencyGraph.get(currKey).has(startKey)) {
+                        // Found Cycle
+                        const cycle = [...path];
+                        // Canonical Key: Sorted Keys
+                        const sortedCycle = [...cycle].sort();
+                        const faceID = GeometryUtils.faceKeyFromKeys(sortedCycle);
 
-                const common = [...neighborsA].filter(n => neighborsC.has(n));
-                if (common.length < 2) continue;
+                        if (!foundFaces.has(faceID)) {
+                            // Check Planarity
+                            if (GeometryUtils.isPlanar(cycle, 0.1)) {
+                                // Check Elementary (No internal chords)
+                                let isElementary = true;
+                                for (let m = 0; m < cycle.length; m++) {
+                                    for (let n = m + 2; n < cycle.length; n++) {
+                                        if (m === 0 && n === cycle.length - 1) continue; // Adjacent wrap
 
-                for (let m = 0; m < common.length - 1; m++) {
-                    for (let n = m + 1; n < common.length; n++) {
-                        const keyB = common[m];
-                        const keyD = common[n];
-                        // Cycle A-B-C-D
-                        const neighborB = this.adjacencyGraph.get(keyB);
-                        const neighborD = this.adjacencyGraph.get(keyD);
+                                        const u = cycle[m];
+                                        const v = cycle[n];
 
-                        // Check full cycle connectivity
-                        if (!neighborB || !neighborD) continue;
-                        // A-B exists (from neighbor list), B-C exists
-                        // C-D exists, D-A exists
-                        const hasAB = neighborsA.has(keyB);
-                        const hasBC = neighborB.has(keyC);
-                        const hasCD = neighborsC.has(keyD);
-                        const hasDA = neighborD.has(keyA);
+                                        // Check if edge u-v exists in graph
+                                        if (this.adjacencyGraph.get(u)?.has(v)) {
+                                            isElementary = false;
+                                            break;
+                                        }
+                                    }
+                                    if (!isElementary) break;
+                                }
 
-                        if (hasAB && hasBC && hasCD && hasDA) {
-                            const quadKeys = [keyA, keyB, keyC, keyD];
-                            if (GeometryUtils.isPlanar(quadKeys, 0.05)) {
-                                const orderedResult = GeometryUtils.orderFaceKeys(quadKeys);
-                                if (!orderedResult) continue;
-                                const orderedKeys = orderedResult.ordered;
-
-                                const faceKey = GeometryUtils.faceKeyFromKeys(orderedKeys);
-                                if (!foundFaces.has(faceKey)) {
-                                    faces.push(orderedKeys);
-                                    foundFaces.add(faceKey);
+                                if (isElementary) {
+                                    // Order the face for rendering (if needed)
+                                    // GeometryUtils.orderFaceKeys computes normal and correct winding
+                                    const orderedResult = GeometryUtils.orderFaceKeys(cycle);
+                                    if (orderedResult) {
+                                        faces.push(orderedResult.ordered);
+                                        foundFaces.add(faceID);
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
+
+                // Recurse (Max Depth 6)
+                if (depth < 6) {
+                    const neighbors = this.adjacencyGraph.get(currKey);
+                    if (neighbors) {
+                        for (const nextKey of neighbors) {
+                            // Canonical Ordering Constraint:
+                            // Only visit nodes strictly larger than StartKey.
+                            // This ensures we only find the cycle when starting from its 'smallest' node.
+                            if (nextKey > startKey) {
+                                // Avoid immediate backtrack and loops in current path
+                                if (!path.includes(nextKey)) {
+                                    findCycles(nextKey, depth + 1, [...path, nextKey]);
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+
+            // Start DFS
+            findCycles(startKey, 1, [startKey]);
         }
+
         return faces;
     }
 

@@ -206,10 +206,10 @@ export class GridSystem {
                 for (let z = -d; z <= d; z++) {
                     // FCC Condition: Sum of coordinates must be even
                     if ((Math.abs(x) + Math.abs(y) + Math.abs(z)) % 2 === 0) {
+                        const ax = Math.abs(x), ay = Math.abs(y), az = Math.abs(z);
 
                         // Gradual Progression for Density
                         if (density < 5.0) {
-                            const ax = Math.abs(x), ay = Math.abs(y), az = Math.abs(z);
                             const h = d / 2;
                             const isCenter = (ax === 0 && ay === 0 && az === 0);
 
@@ -218,7 +218,7 @@ export class GridSystem {
                                 const isCorner = (ax === d && ay === d && az === d);
                                 // Face Center of the main cube (d,0,0)
                                 const isFaceCenter = ((ax === d && ay === 0 && az === 0) || (ay === d && ax === 0 && az === 0) || (az === d && ax === 0 && ay === 0));
-                                // VE Vertices (h,h,0)
+                                // VE Vertices (h,h,0) - Note: h might be odd (e.g. d=2, h=1)
                                 const isVE = ((ax === h && ay === h && az === 0) || (ax === h && az === h && ay === 0) || (ay === h && az === h && ax === 0));
 
                                 if (!isCenter && !isCorner && !isFaceCenter && !isVE) continue;
@@ -235,28 +235,20 @@ export class GridSystem {
 
                                 if (!isCenter && !isCorner && !isFaceCenter && !isVE && !isEdgeMid && !isSubCorner) continue;
                             }
-                            // Density 3: Wireframe Mode (Edges + Diagonals)
-                            else if (density <= 3.5) {
-                                // Outer Cube Edges
-                                const isOuterEdge = (ax === d && ay === d) || (ay === d && az === d) || (az === d && ax === d);
-                                // Outer Face Diagonals (ax=d, ay=az)
-                                const isOuterDiagonal = (ax === d && ay === az) || (ay === d && ax === az) || (az === d && ax === ay);
-                                // Inner Shell Edges
-                                const isInnerEdge = (ax === h && ay === h) || (ay === h && az === h) || (az === h && ax === h);
-                                // Principal Axes
-                                const isAxis = (ax === 0 && ay === 0) || (ay === 0 && az === 0) || (az === 0 && ax === 0);
-                                // Space Diagonals (x=y=z)
-                                const isSpaceDiagonal = (ax === ay && ay === az);
-
-                                if (!isCenter && !isOuterEdge && !isOuterDiagonal && !isInnerEdge && !isAxis && !isSpaceDiagonal) continue;
-                            }
-                            // Density 4: Surface Shells (Walls)
+                            // Density 3 & 4: Structural Volume (Even Grid)
                             else {
-                                // Full Surface of Outer and Inner Shells
-                                const isOuterFrame = (ax === d || ay === d || az === d);
-                                const isHalfShell = (ax === h || ay === h || az === h);
+                                // Filter: Even Coordinates Only
+                                if (x % 2 !== 0 || y % 2 !== 0 || z % 2 !== 0) continue;
 
-                                if (!isOuterFrame && !isHalfShell && !isCenter) continue;
+                                const maxCoord = Math.max(ax, ay, az);
+                                // Density 3: Hollow Outer Shells
+                                if (density <= 3.5) {
+                                    if (maxCoord < d * 0.5) continue;
+                                }
+                                // Density 4: Deepen the shell
+                                else {
+                                    if (maxCoord < d * 0.3) continue;
+                                }
                             }
                         }
 
