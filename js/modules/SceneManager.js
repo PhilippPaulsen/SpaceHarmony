@@ -251,8 +251,8 @@ export class SceneManager {
                 const v = new THREE.Vector3(0, 1, phi).normalize().multiplyScalar(3.2);
                 this.camera.position.copy(v);
                 this.camera.lookAt(0, 0, 0);
-                // Align Up vector to Y-axis as much as possible to keep 'Point Down' orientation stable
-                this.camera.up.set(0, 1, 0);
+                // Use X-axis as Up for stable 'Pentagon' orientation (since view is in YZ plane)
+                this.camera.up.set(1, 0, 0);
             } else {
                 // Front/Top View (looking at XY plane from Z)
                 this.camera.position.set(0, 0, 3.1);
