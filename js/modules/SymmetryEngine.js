@@ -486,15 +486,9 @@ export class SymmetryEngine {
       // I = <5, 3, 2>
       const groupI = this._generateGroupFromGenerators([gen5, gen3, gen2]);
 
-      // For Ih, add inversion
-      const inversion = this.applyInversion();
-      const groupIh = [...groupI];
-      groupI.forEach(m => {
-        groupIh.push(m.clone().multiply(inversion));
-      });
-
-      const result = this._deduplicate(groupIh);
-      return result;
+      // For Space Harmony, we prefer the Rotational Group (I) for cleaner generation.
+      // Full Ih (with inversion) causes edge duplication and winding issues for simple form finding.
+      return this._deduplicate(groupI);
     }
 
     return matrices;

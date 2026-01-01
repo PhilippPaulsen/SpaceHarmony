@@ -576,9 +576,8 @@ export class App {
         // Light Mode -> Black Nodes (0x000000)
         // Dark Mode -> White Nodes (0xffffff)
         if (this.gridMesh) {
-            const hasTheme = document.documentElement.dataset.theme === 'dark'; // Check actual DOM state
-            const color = hasTheme ? 0xffffff : 0x000000;
-            this.gridMesh.material.color.setHex(color);
+            // Do not change material color here. Instance colors handle the theme.
+            this.gridMesh.material.color.setHex(0xffffff);
         }
 
         // Rebuild visuals with new theme colors
@@ -635,9 +634,8 @@ export class App {
     _rebuildVisuals() {
         const geom = new THREE.SphereGeometry(0.01, 8, 8);
         const theme = document.documentElement.dataset.theme || 'light';
-        const color = theme === 'dark' ? 0xffffff : 0x000000;
-        // depthTest: false ensures points are ALWAYS visible through faces
-        const mat = new THREE.MeshBasicMaterial({ color: color, depthTest: false });
+        // Base material color must be White so instance colors (setColorAt) are unmodified.
+        const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false });
 
         if (this.gridMesh) {
             this.sceneManager.scene.remove(this.gridMesh);
@@ -1016,6 +1014,8 @@ export class App {
         const theme = document.documentElement.dataset.theme || 'light';
         const baseColor = new THREE.Color(theme === 'dark' ? 0xffffff : 0x000000);
         const activeColor = new THREE.Color(0xff0000);
+
+        const starColor = new THREE.Color(0xffaa00); // Orange-Gold for Stars
 
         for (let i = 0; i < this.gridPoints.length; i++) {
             if (i === this.activePointIndex) {
@@ -2244,26 +2244,25 @@ export class App {
                             // Check Planarity
                             if (GeometryUtils.isPlanar(cycle, 0.1)) {
                                 // Check Elementary (No internal chords)
-                                // Relaxed for Space Harmony: We WANT to see overlapping forms (e.g. Pentagon + Star).
-                                // Z-fighting is acceptable or resolved by renderOrder/material.
-                                const isElementary = true;
-                                /*
-                                for (let m = 0; m < cycle.length; m++) {
-                                    for (let n = m + 2; n < cycle.length; n++) {
-                                        if (m === 0 && n === cycle.length - 1) continue; // Adjacent wrap
+                                // Exception: Allow internal chords for Pentagons (Length 5) to support Dodecahedron+Star
+                                let isElementary = true;
+                                if (cycle.length !== 5) {
+                                    for (let m = 0; m < cycle.length; m++) {
+                                        for (let n = m + 2; n < cycle.length; n++) {
+                                            if (m === 0 && n === cycle.length - 1) continue; // Adjacent wrap
 
-                                        const u = cycle[m];
-                                        const v = cycle[n];
+                                            const u = cycle[m];
+                                            const v = cycle[n];
 
-                                        // Check if edge u-v exists in graph
-                                        if (this.adjacencyGraph.get(u)?.has(v)) {
-                                            isElementary = false;
-                                            break;
+                                            // Check if edge u-v exists in graph
+                                            if (this.adjacencyGraph.get(u)?.has(v)) {
+                                                isElementary = false;
+                                                break;
+                                            }
                                         }
+                                        if (!isElementary) break;
                                     }
-                                    if (!isElementary) break;
                                 }
-                                */
 
                                 if (isElementary) {
                                     // Order the face for rendering (if needed)

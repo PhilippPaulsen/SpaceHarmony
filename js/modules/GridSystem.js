@@ -90,12 +90,16 @@ export class GridSystem {
             const cubeRaw = [];
             for (let x of [-1, 1]) for (let y of [-1, 1]) for (let z of [-1, 1]) cubeRaw.push(new THREE.Vector3(x, y, z));
 
-            // (0, ±1/phi, ±phi) cyclic
+            // Corrected Dodecahedron Vertices: (0, ±phi, ±1/phi)
+            // Cyclic: (0, phi, iphi), (iphi, 0, phi), (phi, iphi, 0)
             const iphi = 1 / phi;
             const recRaw = [
-                new THREE.Vector3(0, iphi, phi), new THREE.Vector3(0, iphi, -phi), new THREE.Vector3(0, -iphi, phi), new THREE.Vector3(0, -iphi, -phi),
-                new THREE.Vector3(iphi, phi, 0), new THREE.Vector3(iphi, -phi, 0), new THREE.Vector3(-iphi, phi, 0), new THREE.Vector3(-iphi, -phi, 0),
-                new THREE.Vector3(phi, 0, iphi), new THREE.Vector3(phi, 0, -iphi), new THREE.Vector3(-phi, 0, iphi), new THREE.Vector3(-phi, 0, -iphi)
+                // Set 1: (0, ±phi, ±iphi)
+                new THREE.Vector3(0, phi, iphi), new THREE.Vector3(0, phi, -iphi), new THREE.Vector3(0, -phi, iphi), new THREE.Vector3(0, -phi, -iphi),
+                // Set 2: (±iphi, 0, ±phi)
+                new THREE.Vector3(iphi, 0, phi), new THREE.Vector3(iphi, 0, -phi), new THREE.Vector3(-iphi, 0, phi), new THREE.Vector3(-iphi, 0, -phi),
+                // Set 3: (±phi, ±iphi, 0)
+                new THREE.Vector3(phi, iphi, 0), new THREE.Vector3(phi, -iphi, 0), new THREE.Vector3(-phi, iphi, 0), new THREE.Vector3(-phi, -iphi, 0)
             ];
 
             const dodecaRaw = [...cubeRaw, ...recRaw];
@@ -103,6 +107,7 @@ export class GridSystem {
             dodecaRaw.forEach(v => {
                 // Scale to be the harmonic dual
                 const p = v.clone().normalize().multiplyScalar(isoScale * dodecaScale);
+                p.type = 'dodeca';
                 add(p);
             });
         }
@@ -114,21 +119,21 @@ export class GridSystem {
             const phiSq = phi * phi;
             const starScale = 1.0 / phiSq; // 0.381966
 
-            // Pre-calculate Crude Dodeca Vertices for finding faces
+            // Pre-calculate Crude Dodeca Vertices for finding faces (Match above logic)
             const dr = [];
             for (let x of [-1, 1]) for (let y of [-1, 1]) for (let z of [-1, 1]) dr.push(new THREE.Vector3(x, y, z));
             const iphi_l = 1 / phi;
             const rr = [
-                new THREE.Vector3(0, iphi_l, phi), new THREE.Vector3(0, iphi_l, -phi), new THREE.Vector3(0, -iphi_l, phi), new THREE.Vector3(0, -iphi_l, -phi),
-                new THREE.Vector3(iphi_l, phi, 0), new THREE.Vector3(iphi_l, -phi, 0), new THREE.Vector3(-iphi_l, phi, 0), new THREE.Vector3(-iphi_l, -phi, 0),
-                new THREE.Vector3(phi, 0, iphi_l), new THREE.Vector3(phi, 0, -iphi_l), new THREE.Vector3(-phi, 0, iphi_l), new THREE.Vector3(-phi, 0, -iphi_l)
+                new THREE.Vector3(0, phi, iphi_l), new THREE.Vector3(0, phi, -iphi_l), new THREE.Vector3(0, -phi, iphi_l), new THREE.Vector3(0, -phi, -iphi_l),
+                new THREE.Vector3(iphi_l, 0, phi), new THREE.Vector3(iphi_l, 0, -phi), new THREE.Vector3(-iphi_l, 0, phi), new THREE.Vector3(-iphi_l, 0, -phi),
+                new THREE.Vector3(phi, iphi_l, 0), new THREE.Vector3(phi, -iphi_l, 0), new THREE.Vector3(-phi, iphi_l, 0), new THREE.Vector3(-phi, -iphi_l, 0)
             ];
             dr.push(...rr);
 
             icoRaw.forEach(dir => {
                 const normal = dir.clone().normalize();
 
-                // Find 5 Face Vertices (Best Dot Product)
+                // Find 5 Face Vertices
                 let maxDot = -Infinity;
                 dr.forEach(v => {
                     const d = v.clone().normalize().dot(normal);
@@ -144,16 +149,11 @@ export class GridSystem {
                 });
 
                 if (faceVertsRaw.length === 5) {
-                    // Convert to World Scale (Harmonic Dual)
                     const worldVerts = faceVertsRaw.map(v => v.clone().normalize().multiplyScalar(isoScale * 0.79465));
-
-                    // Calculate Center of Face
                     const worldCenter = new THREE.Vector3();
                     worldVerts.forEach(wv => worldCenter.add(wv));
                     worldCenter.multiplyScalar(1 / 5);
 
-                    // Generate Star Points (Intersection of Pentagram Diagonals)
-                    // P_star = Center + (Vertex - Center) * (-1/phi^2)
                     worldVerts.forEach(wv => {
                         const vec = new THREE.Vector3().subVectors(wv, worldCenter);
                         const p = worldCenter.clone().add(vec.multiplyScalar(-starScale));
@@ -162,23 +162,27 @@ export class GridSystem {
                 }
             });
 
-            starPoints.forEach(p => add(p));
+            starPoints.forEach(p => {
+                p.type = 'star';
+                add(p);
+            });
         }
 
         if (density >= 4) {
-            // Density 4: Inner Icosahedron (Nested)
+            // Density 4: Inner Icosahedron
             icoRaw.forEach(v => {
                 const p = v.clone().normalize().multiplyScalar(isoScale * 0.5);
                 add(p);
             });
 
-            // Density 4: Inner Dodecahedron (Half Size Dual)
+            // Density 4: Inner Dodecahedron (Corrected coordinates)
             const innerDualFactor = 0.79465;
             const iphi = 1 / phi;
             const recRaw = [
-                new THREE.Vector3(0, iphi, phi), new THREE.Vector3(0, iphi, -phi), new THREE.Vector3(0, -iphi, phi), new THREE.Vector3(0, -iphi, -phi),
-                new THREE.Vector3(iphi, phi, 0), new THREE.Vector3(iphi, -phi, 0), new THREE.Vector3(-iphi, phi, 0), new THREE.Vector3(-iphi, -phi, 0),
-                new THREE.Vector3(phi, 0, iphi), new THREE.Vector3(phi, 0, -iphi), new THREE.Vector3(-phi, 0, iphi), new THREE.Vector3(-phi, 0, -iphi)
+                new THREE.Vector3(0, phi, iphi), new THREE.Vector3(0, phi, -iphi), new THREE.Vector3(0, -phi, iphi), new THREE.Vector3(0, -phi, -iphi),
+                new THREE.Vector3(iphi, 0, phi), new THREE.Vector3(iphi, 0, -phi), new THREE.Vector3(-iphi, 0, phi), new THREE.Vector3(-iphi, 0, -phi),
+                new THREE.Vector3(phi, iphi, 0), new THREE.Vector3(phi, -iphi, 0), new THREE.Vector3(-phi, iphi, 0), new THREE.Vector3(-phi, -iphi, 0)
+
             ];
             const cubeRaw = [];
             for (let x of [-1, 1]) for (let y of [-1, 1]) for (let z of [-1, 1]) cubeRaw.push(new THREE.Vector3(x, y, z));
@@ -190,7 +194,7 @@ export class GridSystem {
         }
 
         if (density >= 5) {
-            // Radial shells strategy
+            // Radial shells
             for (let d = 5; d <= density; d++) {
                 const shellScale = 1.0 - (d * 0.08);
                 if (shellScale > 0.1) {
