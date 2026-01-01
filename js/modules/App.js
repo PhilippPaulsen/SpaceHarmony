@@ -172,6 +172,9 @@ export class App {
                 xy: false, yz: false, zx: false,
                 xy_diag: false, yz_diag: false, zx_diag: false
             };
+            // Disable Cubic Rotations (90 deg) as they generate out-of-grid points in Ih
+            this.symmetry.settings.rotation = { axis: 'none', steps: 0 };
+
             this.uiManager.updateSymmetryUI('icosahedral');
             if (this.uiManager.elements['toggle-full-icosa']) {
                 this.uiManager.elements['toggle-full-icosa'].checked = true;
@@ -633,13 +636,15 @@ export class App {
         const geom = new THREE.SphereGeometry(0.01, 8, 8);
         const theme = document.documentElement.dataset.theme || 'light';
         const color = theme === 'dark' ? 0xffffff : 0x000000;
-        const mat = new THREE.MeshBasicMaterial({ color: color });
+        // depthTest: false ensures points are ALWAYS visible through faces
+        const mat = new THREE.MeshBasicMaterial({ color: color, depthTest: false });
 
         if (this.gridMesh) {
             this.sceneManager.scene.remove(this.gridMesh);
         }
 
         this.gridMesh = new THREE.InstancedMesh(geom, mat, this.gridPoints.length);
+        this.gridMesh.renderOrder = 999; // Ensure points render on top of transparent faces
         const dummy = new THREE.Object3D();
 
         this.gridPoints.forEach((p, i) => {
@@ -668,7 +673,7 @@ export class App {
             size: hitSize,
             transparent: true,
             opacity: 0.0, // Invisible
-            depthTest: true // Ensure we pick the visible point, not one behind it
+            depthTest: false // Always hittable, ignores occlusion
         });
         this.pickingCloud = new THREE.Points(pickGeom, pickMat);
         this.pickingCloud.name = 'GridPoints'; // Helper for InputManager

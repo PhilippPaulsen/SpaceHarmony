@@ -117,17 +117,115 @@ export class GridSystem {
             });
         }
 
-        // 4. Higher Densities: Nested Shells
+        // 4. Higher Densities: geometric enrichment
+
         if (density >= 3) {
-            // Inner Icosahedron (Half Size)
+            // Density 3: Add Icosidodecahedron (30 Vertices)
+            // These are the Midpoints of the Icosahedron edges.
+            // They allow forming 10-pointed stars and complex pentagonal networks.
+
+            // 1. Generate all unique midpoints between Icoahedron vertices
+            // Distance between neighbors in unit Ico is 2 or 1/phi?
+            // We use a distance check to identify valid edges.
+            const midpoints = [];
+            const edgeDistSq = 4 * 1.0; // Raw coords: dist is 2. (e.g. (1,phi,0) to (-1,phi,0) is dist 2)
+            // Logic: Icosahedron edge length in our raw coords (1, phi) is exactly 2.
+            // Check: (1, phi, 0) - (-1, phi, 0) = (2, 0, 0) -> Length 2. Correct.
+
+            for (let i = 0; i < icoRaw.length; i++) {
+                for (let j = i + 1; j < icoRaw.length; j++) {
+                    if (icoRaw[i].distanceToSquared(icoRaw[j]) < 4.1) { // Tolerance for 4.0
+                        const mid = new THREE.Vector3().addVectors(icoRaw[i], icoRaw[j]).multiplyScalar(0.5);
+                        midpoints.push(mid);
+                    }
+                }
+            }
+
+            // 2. Add them to grid
+            midpoints.forEach(v => {
+                // Scale to lie on the Icosahedron edges?
+                // Or project to Sphere?
+                // "Space Harmony" usually prefers spherical projection (Geodesic).
+                // But "Form" might prefer straight edges.
+                // If we want to draw the STAR connecting midpoints, they must be ON the edges (linear midpoint).
+                // If we project them out, lines become curved/offset.
+                // User image shows straight lines.
+                // We keep them linear midpoints. Radius will be slightly less than Ico radius.
+
+                // Scale factor: The raw midpoints are already correct relative to the raw Ico vertices
+                // We just need to apply the global 'isoScale'.
+                // Reminder: isoScale was calculated for the vertices.
+                // But 'icoRaw' are the raw direction vectors.
+                // We need to apply the same normalization/scaling logic?
+                // Actually, icoRaw are NOT normalized. They are (±1, ±phi, 0).
+
+                // If we used the logic: p = v.clone().normalize().multiplyScalar(isoScale) for vertices...
+                // Then for midpoints, to match the "Linear Edge", we should:
+                // Take linear mix of SCALED vertices.
+                // P_mid = (P_i + P_j) * 0.5
+                // P_i = icoRaw[i].normalized * isoScale
+
+                // Let's re-calculate to be precise.
+
+                // Find indices of parents in the previously added points? Hard.
+                // Re-calculate parents.
+                // P_i direction = icoRaw[i] normalized.
+                // P_j direction = icoRaw[j] normalized.
+                // Mid_direction = (P_i + P_j) * 0.5. (Length is < 1).
+                // We add this point.
+
+                // However, visual consistency:
+                // If we want 10-pointed star ON the sphere, we must normalize.
+                // If I keep linear, I get Icosidodecahedron.
+                // The user's image shows straight lines forming a star.
+                // This implies the nodes ARE the linear midpoints.
+
+                // Let's use Normalized vector but scale it to the linear midpoint radius?
+                // Radius of Ico = sqrt(1 + phi^2) = sqrt(1 + 2.618) = 1.9.
+                // Midpoint (0, phi, 0) radius = phi = 1.618.
+                // Ratio = 1.618 / 1.902 ≈ 0.85.
+
+                // Let's just calculate the linear midpoint of the SCALED vertices.
+                const p = v.clone(); // This is raw linear midpoint (e.g. 0, phi, 0)
+                // Normalize to verify direction, then scale?
+                // Raw Vertex Radius: sqrt(1 + phi*phi)
+                // Raw Midpoint Radius: varies? No, for Ico all edges are same.
+                // Midpoint is e.g. (0, phi, 0). Length phi.
+                // Vertex (1, phi, 0). Length sqrt(1+phi^2).
+
+                // Scale Factor to world:
+                // WorldVertex = RawVertex.normalize() * isoScale
+                // WorldMidpoint = RawMidpoint * (isoScale / RawVertexLength) ???
+                // No.
+
+                // WorldMidpoint = (WorldVertexA + WorldVertexB) / 2
+
+                // Let's do that explicitly.
+                // It ensures exact alignment.
+            });
+
+            for (let i = 0; i < icoRaw.length; i++) {
+                for (let j = i + 1; j < icoRaw.length; j++) {
+                    if (icoRaw[i].distanceToSquared(icoRaw[j]) < 4.1) {
+                        const vA = icoRaw[i].clone().normalize().multiplyScalar(isoScale);
+                        const vB = icoRaw[j].clone().normalize().multiplyScalar(isoScale);
+                        const mid = new THREE.Vector3().addVectors(vA, vB).multiplyScalar(0.5);
+                        add(mid);
+                    }
+                }
+            }
+        }
+
+        if (density >= 4) {
+            // Density 4: Inner Icosahedron (Nested)
             icoRaw.forEach(v => {
                 const p = v.clone().normalize().multiplyScalar(isoScale * 0.5);
                 add(p);
             });
-        }
+            // And maybe Inner Dodeca?
+            // Let's keep distinct generations.
 
-        if (density >= 4) {
-            // Inner Dodecahedron (Half Size Dual)
+            // Density 4: Inner Dodecahedron (Half Size Dual)
             // Scale this one as the Harmonic Dual
             const innerDualFactor = 0.79465;
 

@@ -26,14 +26,14 @@ export class SceneManager {
 
     _setupCamera() {
         const aspect = 1;
-        const frustumSize = 4; // Increased from 2 to avoid clipping large grids
+        const frustumSize = 2.0; // Reverted to 2.0 for 'Large' standard unit scale
         this.camera = new THREE.OrthographicCamera(
             (frustumSize * aspect) / -2,
             (frustumSize * aspect) / 2,
             frustumSize / 2,
             frustumSize / -2,
             0.01,
-            40 // Increased far plane for safety
+            40
         );
         this.camera.position.set(1.8, 1.8, 1.8);
         this.camera.lookAt(0, 0, 0);
@@ -64,8 +64,14 @@ export class SceneManager {
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
         this.controls.enablePan = false;
-        this.controls.enableZoom = false;
-        this.controls.minZoom = 1.0;
+        this.controls.enableZoom = true; // Ensure zoom is enabled (was false in original snippet? Checked previously line 67 was enableZoom=false?)
+        // Wait, line 67 in original file view was `this.controls.enableZoom = false;`? Let's check view.
+        // History shows: 67: this.controls.enableZoom = false; 
+        // User didn't complain about inability to zoom, but clipping?
+        // Ah, if zoom is disabled, user CANNOT fix it. 
+        // We MUST enable zoom.
+        this.controls.enableZoom = true;
+        this.controls.minZoom = 0.5; // Allow zooming out for larger shapes
         this.controls.maxZoom = 4.0;
         this.controls.autoRotate = true;
         this.controls.autoRotateSpeed = 0.8;
@@ -97,6 +103,12 @@ export class SceneManager {
 
 
     updateFrame(type = 'cubic') {
+        // Auto-Adjust Zoom defaults
+        if (this.camera && this.controls) {
+            this.camera.zoom = 1.0; // Standardize to 1.0 for consistency
+            this.camera.updateProjectionMatrix();
+        }
+
         if (this.cubeFrame) {
             this.scene.remove(this.cubeFrame);
             this.cubeFrame.geometry.dispose();
@@ -272,10 +284,13 @@ export class SceneManager {
             this.camera.up.set(0, 1, 0);
         }
 
+        // Reset Zoom to Standard Scale (1.0) for ALL systems
+        // This ensures the fundamental "Unit" size appears identical across Cubic, Tetrahedral, and Icosahedral modes.
+        // User can manually zoom out if the shape (like Icosahedron) exceeds the viewport.
+        this.camera.zoom = 1.0;
+
         this.camera.updateProjectionMatrix();
         this.controls.update();
-
-        // Dispatch optional callback if needed, but SceneManager is low level.
     }
 
     toggleAutoRotate(enabled) {
