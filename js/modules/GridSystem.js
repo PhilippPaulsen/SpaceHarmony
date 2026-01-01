@@ -119,102 +119,118 @@ export class GridSystem {
 
         // 4. Higher Densities: geometric enrichment
 
-        if (density >= 3) {
-            // Density 3: Add Icosidodecahedron (30 Vertices)
-            // These are the Midpoints of the Icosahedron edges.
-            // They allow forming 10-pointed stars and complex pentagonal networks.
+        // 3. Pentagram Intersections on Dodecahedron Faces
+        // To draw the star on the Dodecahedron face, we need the intersection points of the diagonals.
+        // These points form a smaller, inverted pentagon inside the face.
+        // Math: Relative to Face Center, radius is r * (1/phi^2) and rotated 180 (inverted). -> Scale -0.381966
 
-            // 1. Generate all unique midpoints between Icoahedron vertices
-            // Distance between neighbors in unit Ico is 2 or 1/phi?
-            // We use a distance check to identify valid edges.
-            const midpoints = [];
-            const edgeDistSq = 4 * 1.0; // Raw coords: dist is 2. (e.g. (1,phi,0) to (-1,phi,0) is dist 2)
-            // Logic: Icosahedron edge length in our raw coords (1, phi) is exactly 2.
-            // Check: (1, phi, 0) - (-1, phi, 0) = (2, 0, 0) -> Length 2. Correct.
+        // Dodeca Face Centers are exactly the Normalized Icosahedron Vertices * InSphereRadius?
+        // Or we can just calculate them from the generated Dodeca Vertices.
 
-            for (let i = 0; i < icoRaw.length; i++) {
-                for (let j = i + 1; j < icoRaw.length; j++) {
-                    if (icoRaw[i].distanceToSquared(icoRaw[j]) < 4.1) { // Tolerance for 4.0
-                        const mid = new THREE.Vector3().addVectors(icoRaw[i], icoRaw[j]).multiplyScalar(0.5);
-                        midpoints.push(mid);
-                    }
-                }
-            }
+        // Quick method: Iterate the 12 Ico directions (Face normals for Dodeca)
+        // Find 5 closest Dodeca vertices.
+        // Generate star points.
 
-            // 2. Add them to grid
-            midpoints.forEach(v => {
-                // Scale to lie on the Icosahedron edges?
-                // Or project to Sphere?
-                // "Space Harmony" usually prefers spherical projection (Geodesic).
-                // But "Form" might prefer straight edges.
-                // If we want to draw the STAR connecting midpoints, they must be ON the edges (linear midpoint).
-                // If we project them out, lines become curved/offset.
-                // User image shows straight lines.
-                // We keep them linear midpoints. Radius will be slightly less than Ico radius.
+        const starPoints = [];
+        const phiSq = phi * phi;
+        const starScale = 1.0 / phiSq; // 0.381966
 
-                // Scale factor: The raw midpoints are already correct relative to the raw Ico vertices
-                // We just need to apply the global 'isoScale'.
-                // Reminder: isoScale was calculated for the vertices.
-                // But 'icoRaw' are the raw direction vectors.
-                // We need to apply the same normalization/scaling logic?
-                // Actually, icoRaw are NOT normalized. They are (±1, ±phi, 0).
+        icoRaw.forEach(dir => {
+            // Direction of the Dodeca Face Center (Ico vertex)
+            const normal = dir.clone().normalize();
 
-                // If we used the logic: p = v.clone().normalize().multiplyScalar(isoScale) for vertices...
-                // Then for midpoints, to match the "Linear Edge", we should:
-                // Take linear mix of SCALED vertices.
-                // P_mid = (P_i + P_j) * 0.5
-                // P_i = icoRaw[i].normalized * isoScale
+            // Find the 5 Dodeca vertices belonging to this face
+            // They are the ones closest to this normal.
+            // In exact math, dot product is const.
+            // We generated 'dodecaRaw' before (cube + recRaw). 
+            // We need to re-generate or check generated points.
+            // Re-generating 'dodecaRaw' logic locally for matching:
 
-                // Let's re-calculate to be precise.
+            const dr = [];
+            // (±1, ±1, ±1)
+            for (let x of [-1, 1]) for (let y of [-1, 1]) for (let z of [-1, 1]) dr.push(new THREE.Vector3(x, y, z));
+            // (0, ±1/phi, ±phi) cyclic
+            const iphi_l = 1 / phi;
+            const rr = [
+                new THREE.Vector3(0, iphi_l, phi), new THREE.Vector3(0, iphi_l, -phi), new THREE.Vector3(0, -iphi_l, phi), new THREE.Vector3(0, -iphi_l, -phi),
+                new THREE.Vector3(iphi_l, phi, 0), new THREE.Vector3(iphi_l, -phi, 0), new THREE.Vector3(-iphi_l, phi, 0), new THREE.Vector3(-iphi_l, -phi, 0),
+                new THREE.Vector3(phi, 0, iphi_l), new THREE.Vector3(phi, 0, -iphi_l), new THREE.Vector3(-phi, 0, iphi_l), new THREE.Vector3(-phi, 0, -iphi_l)
+            ];
+            dr.push(...rr);
 
-                // Find indices of parents in the previously added points? Hard.
-                // Re-calculate parents.
-                // P_i direction = icoRaw[i] normalized.
-                // P_j direction = icoRaw[j] normalized.
-                // Mid_direction = (P_i + P_j) * 0.5. (Length is < 1).
-                // We add this point.
+            // Filter the 5 vertices for this face
+            const faceVerts = [];
+            let maxDot = -1.0;
 
-                // However, visual consistency:
-                // If we want 10-pointed star ON the sphere, we must normalize.
-                // If I keep linear, I get Icosidodecahedron.
-                // The user's image shows straight lines forming a star.
-                // This implies the nodes ARE the linear midpoints.
-
-                // Let's use Normalized vector but scale it to the linear midpoint radius?
-                // Radius of Ico = sqrt(1 + phi^2) = sqrt(1 + 2.618) = 1.9.
-                // Midpoint (0, phi, 0) radius = phi = 1.618.
-                // Ratio = 1.618 / 1.902 ≈ 0.85.
-
-                // Let's just calculate the linear midpoint of the SCALED vertices.
-                const p = v.clone(); // This is raw linear midpoint (e.g. 0, phi, 0)
-                // Normalize to verify direction, then scale?
-                // Raw Vertex Radius: sqrt(1 + phi*phi)
-                // Raw Midpoint Radius: varies? No, for Ico all edges are same.
-                // Midpoint is e.g. (0, phi, 0). Length phi.
-                // Vertex (1, phi, 0). Length sqrt(1+phi^2).
-
-                // Scale Factor to world:
-                // WorldVertex = RawVertex.normalize() * isoScale
-                // WorldMidpoint = RawMidpoint * (isoScale / RawVertexLength) ???
-                // No.
-
-                // WorldMidpoint = (WorldVertexA + WorldVertexB) / 2
-
-                // Let's do that explicitly.
-                // It ensures exact alignment.
+            // Closest 5 have the same max dot product
+            dr.forEach(v => {
+                const d = v.clone().normalize().dot(normal);
+                if (d > maxDot) maxDot = d;
             });
 
-            for (let i = 0; i < icoRaw.length; i++) {
-                for (let j = i + 1; j < icoRaw.length; j++) {
-                    if (icoRaw[i].distanceToSquared(icoRaw[j]) < 4.1) {
-                        const vA = icoRaw[i].clone().normalize().multiplyScalar(isoScale);
-                        const vB = icoRaw[j].clone().normalize().multiplyScalar(isoScale);
-                        const mid = new THREE.Vector3().addVectors(vA, vB).multiplyScalar(0.5);
-                        add(mid);
-                    }
+            dr.forEach(v => {
+                const d = v.clone().normalize().dot(normal);
+                if (Math.abs(d - maxDot) < 0.001) {
+                    faceVerts.push(v);
                 }
+            });
+
+            if (faceVerts.length === 5) {
+                // Calculate Face Center (Visual) - should align with normal
+                // Just use the 5 verts to calc star points
+                const center = new THREE.Vector3();
+                faceVerts.forEach(v => center.add(v));
+                center.multiplyScalar(1 / 5); // This is the Face Center in Crude Coords
+
+                // Generate Dual/Star points
+                faceVerts.forEach(v => {
+                    const vec = new THREE.Vector3().subVectors(v, center);
+                    // Invert and Scale
+                    const starV = center.clone().add(vec.multiplyScalar(-starScale));
+
+                    // Now scale this 'Crude Star Point' to the World Scale
+                    // We used 'isoScale * dodecaScale' for Dodeca vertices.
+                    // dodecaScale was 0.79465.
+                    // We need to apply the SAME transform chain.
+                    // The 'starV' computed here is in the 'Crude' space of (±1, ±phi).
+                    // We need to Normalize it to Sphere? Or keep it planar on the Face?
+                    // Planar on Face to keep straight lines!
+                    // But we must scale it by 'isoScale * dodecaScale / LengthOfCrudeDodeca'?
+                    // No, just similar triangles.
+                    // WorldDodecaVerts = CrudeDodecaVerts.normalize() * isoScale * dodecaScale.
+                    // This projects them to Sphere.
+                    // This WARPS the face from flat pentagon to spherical cap?
+                    // If Dodeca vertices are on Sphere, the Face is NOT Flat. The edges are chords.
+                    // Pentagram lines are chords.
+                    // The intersection of spherical chords is NOT the same as planar chords.
+                    // BUT, for visual drawing, we usually stay Linear (Euclidean).
+                    // Our Dodecahedron Vertices were generated by PROJECTING to Sphere?
+                    // Code check: "v.clone().normalize().multiplyScalar(isoScale * dodecaScale)" -> YES, SPHERICAL.
+
+                    // If the vertices are on a sphere, the "Face" is a set of 5 points on a sphere.
+                    // The "Center" is inside the sphere.
+                    // The "Star Points" (intersections of Euclidean chords) are INSIDE the sphere (deeper).
+                    // They define the Great Dodecahedron.
+                    // Just use Vector addition of the SPHERICAL vertices.
+                });
+
+                // Re-do with World Coordinates
+                const worldVerts = faceVerts.map(v => v.clone().normalize().multiplyScalar(isoScale * 0.79465));
+                const worldCenter = new THREE.Vector3();
+                worldVerts.forEach(wv => worldCenter.add(wv));
+                worldCenter.multiplyScalar(1 / 5); // CoG of 5 spherical verts (inside sphere)
+
+                worldVerts.forEach(wv => {
+                    const vec = new THREE.Vector3().subVectors(wv, worldCenter);
+                    const p = worldCenter.clone().add(vec.multiplyScalar(-starScale));
+                    starPoints.push(p);
+                });
             }
-        }
+        });
+
+        starPoints.forEach(p => add(p));
+
+
 
         if (density >= 4) {
             // Density 4: Inner Icosahedron (Nested)
@@ -222,8 +238,6 @@ export class GridSystem {
                 const p = v.clone().normalize().multiplyScalar(isoScale * 0.5);
                 add(p);
             });
-            // And maybe Inner Dodeca?
-            // Let's keep distinct generations.
 
             // Density 4: Inner Dodecahedron (Half Size Dual)
             // Scale this one as the Harmonic Dual
@@ -246,30 +260,11 @@ export class GridSystem {
 
         if (density >= 5) {
             // Radial shells strategy
-            // For density 5+, we just add normalized Icosahedron + Dodecahedron at incremental radii
-            // to create a "cloud" suitable for connecting.
-
-            // Steps: 0.2, 0.4, 0.6, 0.8... 
-            // We already covered outer (1.0), 0.85, 0.5, 0.45
-
-            // Let's allow arbitrary density up to 12
             for (let d = 5; d <= density; d++) {
-                const s = 1.0 - (d - 1) * 0.15; // Decreasing radius? Or increasing?
-                // Current logic has "scale" as max size (outer shell).
-                // So we want FILLING.
-                // Let's add shells at:
-                // d=5 -> 0.7
-                // d=6 -> 0.3
-                // d=7 -> 0.6... 
-
-                // Simpler: Just 5 dense layers.
-                // shellScale = d / density? No, strict positions help symmetry.
-
                 const shellScale = 1.0 - (d * 0.08);
                 if (shellScale > 0.1) {
-                    // Add Icosahedron shell
                     icoRaw.forEach(v => {
-                        add(v.clone().normalize().multiplyScalar(scale * shellScale));
+                        add(v.clone().normalize().multiplyScalar(isoScale * shellScale));
                     });
                 }
             }

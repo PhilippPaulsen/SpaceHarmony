@@ -2239,7 +2239,10 @@ export class App {
                             // Check Planarity
                             if (GeometryUtils.isPlanar(cycle, 0.1)) {
                                 // Check Elementary (No internal chords)
-                                let isElementary = true;
+                                // Relaxed for Space Harmony: We WANT to see overlapping forms (e.g. Pentagon + Star).
+                                // Z-fighting is acceptable or resolved by renderOrder/material.
+                                const isElementary = true;
+                                /*
                                 for (let m = 0; m < cycle.length; m++) {
                                     for (let n = m + 2; n < cycle.length; n++) {
                                         if (m === 0 && n === cycle.length - 1) continue; // Adjacent wrap
@@ -2255,6 +2258,7 @@ export class App {
                                     }
                                     if (!isElementary) break;
                                 }
+                                */
 
                                 if (isElementary) {
                                     // Order the face for rendering (if needed)
@@ -2270,8 +2274,8 @@ export class App {
                     }
                 }
 
-                // Recurse (Max Depth 6)
-                if (depth < 6) {
+                // Recurse (Max Depth 8)
+                if (depth < 8) {
                     const neighbors = this.adjacencyGraph.get(currKey);
                     if (neighbors) {
                         for (const nextKey of neighbors) {
