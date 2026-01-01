@@ -1567,11 +1567,9 @@ export class App {
         const uiState = this.uiManager.getSymmetryState();
 
         let transforms;
-        if (this.gridSystem.system === 'icosahedral' && uiState.reflections.fullIcosa) {
-            // Override manual settings with full Icosahedral group
+        if (this.gridSystem.system === 'icosahedral') {
             transforms = this.symmetry.getGroupMatrices('icosahedral');
         } else if (this.gridSystem.system === 'tetrahedral') {
-            // Force correct Td group (including 3-fold diagonals) which UI settings cannot express purely via checkboxes
             transforms = this.symmetry.getGroupMatrices('tetrahedral');
         } else {
             transforms = this.symmetry.getTransforms();
@@ -1963,7 +1961,14 @@ export class App {
 
     _buildAdjacencyGraph() {
         this.adjacencyGraph.clear();
-        const transforms = this.symmetry.getTransforms();
+        let transforms;
+        if (this.gridSystem.system === 'icosahedral') {
+            transforms = this.symmetry.getGroupMatrices('icosahedral');
+        } else if (this.gridSystem.system === 'tetrahedral') {
+            transforms = this.symmetry.getGroupMatrices('tetrahedral');
+        } else {
+            transforms = this.symmetry.getTransforms();
+        }
 
         this.baseSegments.forEach(seg => {
             transforms.forEach(matrix => {
