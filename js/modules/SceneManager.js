@@ -232,14 +232,22 @@ export class SceneManager {
         this.renderer.render(this.scene, this.camera);
     }
 
-    setView(type) {
+    setView(type, mode) {
         this.toggleAutoRotate(false);
 
         if (type === 'z') {
-            // Front/Top View (looking at XY plane from Z)
-            this.camera.position.set(0, 0, 3.1);
-            this.camera.lookAt(0, 0, 0);
-            this.camera.up.set(0, 1, 0);
+            if (mode === 'tetrahedral') {
+                // Tetrahedral "Front" is the Triangle View (Body Diagonal)
+                // We use the diagonal (1,1,1) view which presents the tetrahedron as a triangle/hexagon
+                this.camera.position.set(1.8, 1.8, 1.8);
+                this.camera.lookAt(0, 0, 0);
+                this.camera.up.set(0, 1, 0);
+            } else {
+                // Front/Top View (looking at XY plane from Z)
+                this.camera.position.set(0, 0, 3.1);
+                this.camera.lookAt(0, 0, 0);
+                this.camera.up.set(0, 1, 0);
+            }
         } else if (type === 'iso') {
             // Isometric Perspective
             this.camera.position.set(1.8, 1.8, 1.8);

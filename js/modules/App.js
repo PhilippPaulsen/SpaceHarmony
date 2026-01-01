@@ -148,7 +148,7 @@ export class App {
                 this.generateForms({ ...config, count: 500 });
             },
             onLoadResult: (res) => this.loadGeneratedForm(res),
-            onViewZ: () => this.sceneManager.setView('z'),
+            onViewZ: () => this.sceneManager.setView('z', this.gridSystem.system),
             onViewIso: () => this.sceneManager.setView('iso'),
             onViewOverview: () => this.sceneManager.setView('overview'),
             onCollectSystematic: (dens) => this.collectAllSystematicForms(dens),

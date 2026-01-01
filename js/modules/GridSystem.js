@@ -90,7 +90,11 @@ export class GridSystem {
         });
 
         // 3. Dodecahedron (20 Vertices) - "Dual"
-        // If density > 1, add Dodecahedron vertices
+        // If density >= 2, add Dodecahedron vertices
+        // We position them as the geometric Dual to the Icosahedron.
+        // Ratio R_dual / R_ico ≈ 0.79465 (Vertices of Dodecahedron at Face Centers of Icosahedron)
+        const dualFactor = 0.79465;
+
         if (density >= 2) {
             // (±1, ±1, ±1)
             const cubeRaw = [];
@@ -106,47 +110,38 @@ export class GridSystem {
 
             const dodecaRaw = [...cubeRaw, ...recRaw];
 
-            // Dodecahedron circumradius is usually slightly different if sharing edge length.
-            // But here we probably want them on the SAME conceptual sphere or concentric?
-            // "SpaceHarmony" -> Harmony implies nested shells.
-            // Let's put Dodecahedron at slightly smaller radius or same?
-            // Usually Dodecahedron fits INSIDE Icosahedron or vice versa.
-            // Let's scale it to fit nicely: 
-            // Dodecahedron vertices are "dual" to Icosahedron faces.
-
             dodecaRaw.forEach(v => {
-                const p = v.clone().normalize().multiplyScalar(scale * 0.85); // Slightly smaller shell
+                // Scale to be the harmonic dual
+                const p = v.clone().normalize().multiplyScalar(isoScale * dualFactor);
                 add(p);
             });
         }
 
-        // 4. Higher Densities: Nested Shells / Midpoints
-        // We use a simple strategy: specific shells for lower densities, and scaling for higher.
-
+        // 4. Higher Densities: Nested Shells
         if (density >= 3) {
-            // Inner Icosahedron (Midpoint-like scale)
+            // Inner Icosahedron (Half Size)
             icoRaw.forEach(v => {
-                const p = v.clone().normalize().multiplyScalar(scale * 0.5);
+                const p = v.clone().normalize().multiplyScalar(isoScale * 0.5);
                 add(p);
             });
         }
 
         if (density >= 4) {
-            // Inner Dodecahedron
+            // Inner Dodecahedron (Half Size Dual)
+            // Re-generate raw points if needed (or reuse if scoped, but we just rebuild for clarity)
             const iphi = 1 / phi;
             const recRaw = [
                 new THREE.Vector3(0, iphi, phi), new THREE.Vector3(0, iphi, -phi), new THREE.Vector3(0, -iphi, phi), new THREE.Vector3(0, -iphi, -phi),
                 new THREE.Vector3(iphi, phi, 0), new THREE.Vector3(iphi, -phi, 0), new THREE.Vector3(-iphi, phi, 0), new THREE.Vector3(-iphi, -phi, 0),
                 new THREE.Vector3(phi, 0, iphi), new THREE.Vector3(phi, 0, -iphi), new THREE.Vector3(-phi, 0, iphi), new THREE.Vector3(-phi, 0, -iphi)
             ];
-            // Add box vertices too for full dodeca
             const cubeRaw = [];
             for (let x of [-1, 1]) for (let y of [-1, 1]) for (let z of [-1, 1]) cubeRaw.push(new THREE.Vector3(x, y, z));
             const dodecaRaw = [...cubeRaw, ...recRaw];
 
             dodecaRaw.forEach(v => {
-                // Scale factor guessed to look good inside
-                add(v.clone().normalize().multiplyScalar(scale * 0.45));
+                // Half scale of the outer dual
+                add(v.clone().normalize().multiplyScalar(isoScale * dualFactor * 0.5));
             });
         }
 
