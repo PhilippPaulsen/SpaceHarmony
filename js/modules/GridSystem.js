@@ -193,8 +193,8 @@ export class GridSystem {
         const points = [];
         const uniqueKeys = new Set();
 
-        // Ensure we use an even number of steps so that (d,d,d) satisfies the even-sum check (3d is even => d even).
-        // This guarantees the grid includes the Cube Corners (Frame Vertices) and the Center.
+        // Ensure we use an even number of steps so that (d,d,d) satisfies the even-sum check.
+        // d steps: 2, 4, 6, 8, 10
         const d = Math.max(1, Math.floor(density)) * 2;
 
         // Step size to fill the 'scale' volume
@@ -207,43 +207,60 @@ export class GridSystem {
                     // FCC Condition: Sum of coordinates must be even
                     if ((Math.abs(x) + Math.abs(y) + Math.abs(z)) % 2 === 0) {
 
-                        // Gradual/Shell Filter for Lower Densities
-                        if (density < 4.0) {
+                        // Gradual Progression for Density
+                        if (density < 5.0) {
                             const ax = Math.abs(x), ay = Math.abs(y), az = Math.abs(z);
                             const h = d / 2;
-
-                            // Key Structural Groups
                             const isCenter = (ax === 0 && ay === 0 && az === 0);
-                            const isOuterFrame = (ax === d || ay === d || az === d); // Frame Surface
-                            const isHalfShell = (ax === h || ay === h || az === h);  // Inner Shell
-
-                            // Sub-groups
-                            const isCorner = (ax === d && ay === d && az === d);
-                            // Face Center of the main cube (2,0,0) -> (d,0,0)
-                            const isFaceCenter = ((ax === d && ay === 0 && az === 0) || (ay === d && ax === 0 && az === 0) || (az === d && ax === 0 && ay === 0));
-                            // VE Vertices (1,1,0) -> (d/2, d/2, 0)
-                            const isVE = ((ax === h && ay === h && az === 0) || (ax === h && az === h && ay === 0) || (ay === h && az === h && ax === 0));
 
                             // Density 1: Core Skeleton (Minimal)
                             if (density <= 1.5) {
+                                const isCorner = (ax === d && ay === d && az === d);
+                                // Face Center of the main cube (d,0,0)
+                                const isFaceCenter = ((ax === d && ay === 0 && az === 0) || (ay === d && ax === 0 && az === 0) || (az === d && ax === 0 && ay === 0));
+                                // VE Vertices (h,h,0)
+                                const isVE = ((ax === h && ay === h && az === 0) || (ax === h && az === h && ay === 0) || (ay === h && az === h && ax === 0));
+
                                 if (!isCenter && !isCorner && !isFaceCenter && !isVE) continue;
                             }
-                            // Density 2: Enhanced Skeleton (Add Edge Midpoints of Cube)
-                            // Edge Mid: (2,2,0) -> (d, d, 0). 
-                            // This adds the midpoints of the frame edges.
-                            // Also maybe (1,1,1) -> (d/2, d/2, d/2)? (Sub-cube corners)
+                            // Density 2: Enhanced Skeleton
                             else if (density <= 2.5) {
+                                const isCorner = (ax === d && ay === d && az === d);
+                                const isFaceCenter = ((ax === d && ay === 0 && az === 0) || (ay === d && ax === 0 && az === 0) || (az === d && ax === 0 && ay === 0));
+                                const isVE = ((ax === h && ay === h && az === 0) || (ax === h && az === h && ay === 0) || (ay === h && az === h && ax === 0));
+                                // Edge Midpoints (d,d,0)
                                 const isEdgeMid = ((ax === d && ay === d && az === 0) || (ax === d && az === d && ay === 0) || (ay === d && az === d && ax === 0));
+                                // Sub-corners (h,h,h)
                                 const isSubCorner = (ax === h && ay === h && az === h);
 
-                                // Show Core + EdgeMids + SubCorners
                                 if (!isCenter && !isCorner && !isFaceCenter && !isVE && !isEdgeMid && !isSubCorner) continue;
                             }
-                            // Density 3: Full Shells (No deep volume)
+                            // Density 3: Wireframe Mode (Edges + Diagonals)
+                            else if (density <= 3.5) {
+                                // Outer Cube Edges
+                                const isOuterEdge = (ax === d && ay === d) || (ay === d && az === d) || (az === d && ax === d);
+                                // Outer Face Diagonals (ax=d, ay=az)
+                                const isOuterDiagonal = (ax === d && ay === az) || (ay === d && ax === az) || (az === d && ax === ay);
+                                // Inner Shell Edges
+                                const isInnerEdge = (ax === h && ay === h) || (ay === h && az === h) || (az === h && ax === h);
+                                // Principal Axes
+                                const isAxis = (ax === 0 && ay === 0) || (ay === 0 && az === 0) || (az === 0 && ax === 0);
+                                // Space Diagonals (x=y=z)
+                                const isSpaceDiagonal = (ax === ay && ay === az);
+
+                                if (!isCenter && !isOuterEdge && !isOuterDiagonal && !isInnerEdge && !isAxis && !isSpaceDiagonal) continue;
+                            }
+                            // Density 4: Surface Shells (Walls)
                             else {
+                                // Full Surface of Outer and Inner Shells
+                                const isOuterFrame = (ax === d || ay === d || az === d);
+                                const isHalfShell = (ax === h || ay === h || az === h);
+
                                 if (!isOuterFrame && !isHalfShell && !isCenter) continue;
                             }
                         }
+
+                        // Density 5+: Full Volume (No filter)
 
                         const v = new THREE.Vector3(x, y, z).multiplyScalar(step);
 
