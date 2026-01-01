@@ -8,7 +8,7 @@ export class InputManager {
         this.callbacks = callbacks; // { onClick: (intersect) => {}, onDrag: () => {} }
 
         this.raycaster = new THREE.Raycaster();
-        this.raycaster.params.Points.threshold = 0.15; // Increased for better hit detection
+        this.raycaster.params.Points.threshold = 0.05; // Reduced from 0.15 for more precise picking
         this.pointer = new THREE.Vector2();
         this.pointerDown = false;
         this.dragging = false;

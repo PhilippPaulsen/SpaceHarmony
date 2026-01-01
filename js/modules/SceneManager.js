@@ -26,14 +26,14 @@ export class SceneManager {
 
     _setupCamera() {
         const aspect = 1;
-        const frustumSize = 2;
+        const frustumSize = 4; // Increased from 2 to avoid clipping large grids
         this.camera = new THREE.OrthographicCamera(
             (frustumSize * aspect) / -2,
             (frustumSize * aspect) / 2,
             frustumSize / 2,
             frustumSize / -2,
             0.01,
-            20
+            40 // Increased far plane for safety
         );
         this.camera.position.set(1.8, 1.8, 1.8);
         this.camera.lookAt(0, 0, 0);

@@ -91,9 +91,9 @@ export class GridSystem {
 
         // 3. Dodecahedron (20 Vertices) - "Dual"
         // If density >= 2, add Dodecahedron vertices
-        // We position them on the SAME circumsphere as the Icosahedron for better accessibility and "Spherical Harmony".
-        // This makes the Dodecahedron vertices larger and easier to distinguish from the Icosahedron vertices.
-        const dodecaScale = 1.0; // Previously 0.79465 (Dual Ratio)
+        // We position them as the geometric Dual to the Icosahedron.
+        // Ratio R_dual / R_ico ≈ 0.79465 (Vertices of Dodecahedron at Face Centers of Icosahedron)
+        const dodecaScale = 0.79465;
 
         if (density >= 2) {
             // (±1, ±1, ±1)
@@ -111,7 +111,7 @@ export class GridSystem {
             const dodecaRaw = [...cubeRaw, ...recRaw];
 
             dodecaRaw.forEach(v => {
-                // Scale to Sphere
+                // Scale to be the harmonic dual
                 const p = v.clone().normalize().multiplyScalar(isoScale * dodecaScale);
                 add(p);
             });
@@ -128,10 +128,7 @@ export class GridSystem {
 
         if (density >= 4) {
             // Inner Dodecahedron (Half Size Dual)
-            // Scale this one as the Harmonic Dual (0.79 of 0.5? Or just 0.5 of Sphere?)
-            // Let's keep the inner one as a Dual (0.79) to allow nesting variety, 
-            // OR make it simple 0.5 shell. 
-            // Let's use the Geometric Dual Ratio for the inner one to keep "SpaceHarmony" depth.
+            // Scale this one as the Harmonic Dual
             const innerDualFactor = 0.79465;
 
             const iphi = 1 / phi;
