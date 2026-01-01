@@ -1352,127 +1352,84 @@ export class App {
 
         const keys = Array.from(this.adjacencyGraph.keys());
 
-        // 1. Find Triangles (3-cycles)
-        // A -> B -> C -> A
-        for (const keyA of keys) {
-            const neighborsA = this.adjacencyGraph.get(keyA);
-            if (!neighborsA) continue;
+        // Generalized DFS Cycle Detection (Lengths 3 to 12)
+        // Supports Triangles, Squares, Pentagons, Hexagons, Octagons, Decagons
+        const MAX_CYCLE_LEN = 12;
 
-            for (const keyB of neighborsA) {
-                if (keyB <= keyA) continue; // Enforce ordering A < B < C to avoid dupes
+        for (const startKey of keys) {
+            // Optimization: Only start searches from nodes that have sufficient neighbors
+            const neighbors = this.adjacencyGraph.get(startKey);
+            if (!neighbors || neighbors.size < 2) continue;
 
-                const neighborsB = this.adjacencyGraph.get(keyB);
-                if (!neighborsB) continue;
+            const findCycles = (currKey, depth, path) => {
+                const currNeighbors = this.adjacencyGraph.get(currKey);
+                if (!currNeighbors) return;
 
-                for (const keyC of neighborsB) {
-                    if (keyC <= keyB) continue;
+                // Check for closure (cycle found)
+                if (depth >= 3) {
+                    if (currNeighbors.has(startKey)) {
+                        // Found cycle: [...path, currKey] -> startKey
+                        const cycleKeys = [...path, currKey];
 
-                    if (neighborsA.has(keyC)) {
-                        // Found Triangle A-B-C
-                        const faceKeys = [keyA, keyB, keyC];
-                        const faceKey = GeometryUtils.faceKeyFromKeys(faceKeys);
-                        if (!foundFaces.has(faceKey)) {
-                            faces.push({ keys: faceKeys, key: faceKey, source: 'auto' });
-                            foundFaces.add(faceKey);
-                        }
-                    }
-                }
-            }
-        }
+                        // Elementary Check: Verify no internal chords exist in the cycle
+                        // A cycle is elementary if NO two non-adjacent vertices are connected by an edge.
+                        let isElementary = true;
+                        for (let m = 0; m < cycleKeys.length; m++) {
+                            for (let n = m + 2; n < cycleKeys.length; n++) {
+                                // Adjacent or Wrapping Check
+                                if (m === 0 && n === cycleKeys.length - 1) continue; // First and Last are adjacent
 
-        // 2. Find Planar Quads (4-cycles)
-        // Logic adapted from old raumharmonik.js
-        for (let i = 0; i < keys.length; i += 1) {
-            const keyA = keys[i];
-            for (let j = i + 1; j < keys.length; j += 1) {
-                const keyC = keys[j];
-
-                // Skip if A and C are directly connected (diagonal edge present) --> Triangle logic covers it
-                if (this.adjacencyGraph.get(keyA)?.has(keyC)) continue;
-
-                const neighborsA = this.adjacencyGraph.get(keyA);
-                const neighborsC = this.adjacencyGraph.get(keyC);
-                if (!neighborsA || !neighborsC) continue;
-
-                const commonNeighbors = [...neighborsA].filter((n) => neighborsC.has(n));
-                if (commonNeighbors.length < 2) continue;
-
-                for (let m = 0; m < commonNeighbors.length - 1; m += 1) {
-                    for (let n = m + 1; n < commonNeighbors.length; n += 1) {
-                        const keyB = commonNeighbors[m];
-                        const keyD = commonNeighbors[n];
-
-                        // Check if B and D are connected (would be two triangles sharing edge)
-                        // If B-D exists, triangle logic finds 2 tris.
-                        // But if we want a Quad, we assume no cross edge?
-                        // Actually regular quads don't have cross edges usually in this context.
-
-                        // Ensure cycle A->B->C->D closes
-                        const neighborsB = this.adjacencyGraph.get(keyB);
-                        const neighborsD = this.adjacencyGraph.get(keyD);
-
-                        // Check planar
-                        const quadKeys = [keyA, keyB, keyC, keyD];
-                        if (GeometryUtils.isPlanar(quadKeys, 0.05)) { // Relaxed tolerance
-
-                            // CRITICAL: Order keys physically for Volume Detection to recognize edges
-                            const orderedResult = GeometryUtils.orderFaceKeys(quadKeys);
-                            if (!orderedResult) continue;
-                            const orderedKeys = orderedResult.ordered;
-
-                            const faceKey = GeometryUtils.faceKeyFromKeys(orderedKeys);
-                            if (!foundFaces.has(faceKey)) {
-                                faces.push({ keys: orderedKeys, key: faceKey, source: 'auto' });
-                                foundFaces.add(faceKey);
+                                const u = cycleKeys[m];
+                                const v = cycleKeys[n];
+                                if (this.adjacencyGraph.get(u)?.has(v)) {
+                                    isElementary = false;
+                                    break;
+                                }
                             }
+                            if (!isElementary) break;
                         }
-                    }
-                }
-            }
-        }
 
-        // 3. Find Planar Pentagons (5-cycles)
-        // Icosahedral System needs Pentagons (Dodecahedron faces)
-        for (let i = 0; i < keys.length; i++) {
-            const keyA = keys[i];
-            const neighborsA = this.adjacencyGraph.get(keyA);
-            if (!neighborsA) continue;
-
-            for (const keyB of neighborsA) {
-                if (keyB <= keyA) continue;
-
-                const neighborsB = this.adjacencyGraph.get(keyB);
-                for (const keyC of neighborsB) {
-                    if (keyC === keyA) continue;
-
-                    const neighborsC = this.adjacencyGraph.get(keyC);
-                    for (const keyD of neighborsC) {
-                        if (keyD === keyB || keyD === keyA) continue;
-
-                        const neighborsD = this.adjacencyGraph.get(keyD);
-                        for (const keyE of neighborsD) {
-                            if (keyE === keyC || keyE === keyB || keyE === keyA) continue;
-
-                            // Check if E closes back to A
-                            if (neighborsA.has(keyE)) {
-                                // Found 5-cycle A-B-C-D-E-A
-                                const pentKeys = [keyA, keyB, keyC, keyD, keyE];
-
-                                // Planarity Check
-                                if (GeometryUtils.isPlanar(pentKeys, 0.05)) {
-                                    // Order physically
-                                    const orderedResult = GeometryUtils.orderFaceKeys(pentKeys);
-                                    if (orderedResult) {
-                                        const faceKey = GeometryUtils.faceKeyFromKeys(orderedResult.ordered);
-                                        if (!foundFaces.has(faceKey)) {
-                                            faces.push({ keys: orderedResult.ordered, key: faceKey, source: 'auto' });
-                                            foundFaces.add(faceKey);
-                                        }
+                        if (isElementary) {
+                            // Planarity Check
+                            if (GeometryUtils.isPlanar(cycleKeys, 0.05)) {
+                                // Order keys physically
+                                const orderedResult = GeometryUtils.orderFaceKeys(cycleKeys);
+                                if (orderedResult) {
+                                    const faceKey = GeometryUtils.faceKeyFromKeys(orderedResult.ordered);
+                                    if (!foundFaces.has(faceKey)) {
+                                        faces.push({ keys: orderedResult.ordered, key: faceKey, source: 'auto' });
+                                        foundFaces.add(faceKey);
                                     }
                                 }
                             }
                         }
                     }
+                }
+
+                // Recurse
+                // Canonical Ordering: Only visit nodes > startKey to prevent duplicate permutations
+                if (depth < MAX_CYCLE_LEN) {
+                    for (const nextKey of currNeighbors) {
+                        if (nextKey > startKey) {
+                            if (!path.includes(nextKey)) {
+                                findCycles(nextKey, depth + 1, [...path, currKey]);
+                            }
+                        }
+                    }
+                }
+            };
+
+            // Start DFS
+            // path starts empty as we pass startKey implicitly as 'previous'? 
+            // No, my logic above uses path to store visited.
+            // Call: current, depth, path-so-far (excluding current)
+            // Actually, let's path include startKey?
+            // "path" in findCycles argument is "path leading to curr".
+            // Initial call: curr=neighbor, depth=2, path=[startKey]
+
+            for (const neighbor of neighbors) {
+                if (neighbor > startKey) {
+                    findCycles(neighbor, 2, [startKey]);
                 }
             }
         }

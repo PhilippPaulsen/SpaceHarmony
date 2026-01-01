@@ -135,18 +135,19 @@ export class Taxonomy {
     static getUniqueEdges(faces) {
         const edgeSet = new Set();
         const edges = [];
-        faces.forEach(tri => {
-            // tri is [i, j, k] indices
-            const pairs = [[tri[0], tri[1]], [tri[1], tri[2]], [tri[2], tri[0]]];
-            pairs.forEach(p => {
-                const u = Math.min(p[0], p[1]);
-                const v = Math.max(p[0], p[1]);
+        faces.forEach(face => {
+            // face is [i, j, k, ...] indices
+            for (let i = 0; i < face.length; i++) {
+                const a = face[i];
+                const b = face[(i + 1) % face.length];
+                const u = Math.min(a, b);
+                const v = Math.max(a, b);
                 const key = `${u}-${v}`;
                 if (!edgeSet.has(key)) {
                     edgeSet.add(key);
                     edges.push([u, v]);
                 }
-            });
+            }
         });
         return edges;
     }
@@ -221,7 +222,9 @@ export class Taxonomy {
         const faceSigs = [];
         for (const entry of planeMap.values()) {
             const vSet = new Set();
-            entry.tris.forEach(t => { vSet.add(t[0]); vSet.add(t[1]); vSet.add(t[2]); });
+            entry.tris.forEach(face => {
+                face.forEach(idx => vSet.add(idx));
+            });
             faceSigs.push(vSet.size);
         }
 

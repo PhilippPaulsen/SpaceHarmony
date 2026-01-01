@@ -856,8 +856,8 @@ function _validateForm(form) {
     const cycles = [];
     const cycleSet = new Set(); // hash to deduplicate: "sorted_indices"
 
-    // Unified Cycle Detection (Lengths 3, 4, 5, 6)
-    // Supports Triangles, Squares, Pentagons (Dodecahedron), Hexagons (Truncated forms)
+    // Unified Cycle Detection (Lengths 3 to 12)
+    // Supports Triangles, Squares, Pentagons, Hexagons, Octagons, Decagons
     // iterate all vertices
     for (let i = 0; i < points.length; i++) {
         // Optimization: Only start searches from nodes that have neighbors
@@ -866,7 +866,7 @@ function _validateForm(form) {
 
         const findCycles = (curr, start, depth, path) => {
             // Check for loop closure
-            // We only care about cycles of length 3 to 6
+            // We only care about cycles of length 3 to 12
             if (depth >= 3) {
                 if (adj.get(curr).includes(start)) {
                     // Found a cycle closed back to start
@@ -920,8 +920,8 @@ function _validateForm(form) {
                 }
             }
 
-            // Recurse (Max Depth 6)
-            if (depth < 6) {
+            // Recurse (Max Depth 12)
+            if (depth < 12) {
                 const neighbors = adj.get(curr);
                 for (const n of neighbors) {
                     // Enforce Canonical Ordering: only visit nodes > start (except for closure check handled above)
