@@ -213,8 +213,17 @@ export class App {
             this.symmetry.settings.rotation = { axis: 'all', steps: 2 };
         } else {
             // Cubic defaults
+            // Reset Internal Settings including steps (critical because Ico sets steps=0)
             this.symmetry.settings.reflections = { xy: true, yz: true, zx: true };
+            this.symmetry.settings.rotation = { axis: 'all', steps: 4 };
+
             this.uiManager.updateSymmetryUI('cubic');
+
+            // Reset Standard Cubic Reflections to TRUE in UI
+            ['reflection-xy', 'reflection-yz', 'reflection-zx'].forEach(id => {
+                const el = this.uiManager.elements[id];
+                if (el) el.checked = true;
+            });
 
             // CRITICAL: Explicitly uncheck diagonal/ico toggles so they don't leak back in
             // via getSymmetryState() on next interaction.
