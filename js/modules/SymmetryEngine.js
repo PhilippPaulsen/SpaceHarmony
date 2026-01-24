@@ -110,23 +110,39 @@ export class SymmetryEngine {
     let transforms = [new THREE.Matrix4().identity()];
     const { reflections, rotation, translation } = this.settings;
 
-    if (reflections.xy) {
-      transforms = this._expand(transforms, this._reflectionMatrix('xy'));
-    }
-    if (reflections.yz) {
-      transforms = this._expand(transforms, this._reflectionMatrix('yz'));
-    }
-    if (reflections.zx) {
-      transforms = this._expand(transforms, this._reflectionMatrix('zx'));
-    }
-    if (reflections.xy_diag) {
-      transforms = this._expand(transforms, this._reflectionMatrix('xy_diag'));
-    }
-    if (reflections.yz_diag) {
-      transforms = this._expand(transforms, this._reflectionMatrix('yz_diag'));
-    }
-    if (reflections.zx_diag) {
-      transforms = this._expand(transforms, this._reflectionMatrix('zx_diag'));
+
+    // Special handling for Full Icosahedral Mode
+    if (reflections.fullIcosa) {
+      // If full Icosa is enabled, we use the pre-calculated group.
+      // We might still want to apply Inversion if requested (Ih vs I).
+      // The 'icosahedral' group generator currently returns 'I' (60 elements).
+      // If inversion is ON, we get 'Ih' (120 elements).
+      const groupMatrices = this.getSymmetryGroup('icosahedral');
+
+      // Replace current transforms with group matrices (assuming group includes Identity)
+      // OR Merge? Usually if Icosa is ON, the standard XYZ reflections are OFF or redundant.
+      // Let's MERGE to be safe, but typically we start fresh.
+      transforms = groupMatrices;
+    } else {
+      // Standard Cubic/Tetrahedral construction
+      if (reflections.xy) {
+        transforms = this._expand(transforms, this._reflectionMatrix('xy'));
+      }
+      if (reflections.yz) {
+        transforms = this._expand(transforms, this._reflectionMatrix('yz'));
+      }
+      if (reflections.zx) {
+        transforms = this._expand(transforms, this._reflectionMatrix('zx'));
+      }
+      if (reflections.xy_diag) {
+        transforms = this._expand(transforms, this._reflectionMatrix('xy_diag'));
+      }
+      if (reflections.yz_diag) {
+        transforms = this._expand(transforms, this._reflectionMatrix('yz_diag'));
+      }
+      if (reflections.zx_diag) {
+        transforms = this._expand(transforms, this._reflectionMatrix('zx_diag'));
+      }
     }
 
     if (rotation.axis !== 'none' && rotation.steps > 1) {

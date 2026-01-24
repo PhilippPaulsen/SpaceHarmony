@@ -275,7 +275,6 @@ export class UIManager {
             reflections: {
                 xy: this._getValue('reflection-xy'),
                 yz: this._getValue('reflection-yz'),
-                yz: this._getValue('reflection-yz'),
                 zx: this._getValue('reflection-zx'),
                 xy_diag: this._getValue('reflection-xy-diag'),
                 yz_diag: this._getValue('reflection-yz-diag'),

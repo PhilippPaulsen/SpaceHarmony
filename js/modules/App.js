@@ -2572,8 +2572,9 @@ export class App {
     // --- Export Methods ---
 
     _exportJSON() {
+        // Prepare Base Data (Parametric)
         const data = {
-            version: "1.0",
+            version: "1.1", // Bumped version for baked support
             timestamp: new Date().toISOString(),
             gridDivisions: this.gridDivisions,
             baseSegments: this.baseSegments.map(s => ({
@@ -2586,11 +2587,72 @@ export class App {
                 indices: v.indices,
                 origin: v.origin
             })),
-            symmetryState: this.uiManager.getSymmetryState()
+            symmetryState: this.uiManager.getSymmetryState(),
+            // New: Baked Geometry (Explicit "Amalgam" Export)
+            bakedGeometry: this._generateBakedGeometry()
         };
 
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         this._downloadBlob(blob, 'spaceharmony_form.json');
+    }
+
+    _generateBakedGeometry() {
+        // Similar to OBJ export but returns structured data
+        const transforms = this.symmetry.getTransforms();
+        const vMap = new Map();
+        const uniquePoints = []; // Stores {x,y,z}
+
+        const getPtIndex = (v) => {
+            const key = `${v.x.toFixed(6)}_${v.y.toFixed(6)}_${v.z.toFixed(6)}`;
+            if (!vMap.has(key)) {
+                vMap.set(key, uniquePoints.length);
+                uniquePoints.push({ x: v.x, y: v.y, z: v.z });
+            }
+            return vMap.get(key);
+        };
+
+        const lines = [];
+        const faces = [];
+
+        // 1. Lines
+        this.baseSegments.forEach(seg => {
+            transforms.forEach(mat => {
+                const p1 = seg.start.clone().applyMatrix4(mat);
+                const p2 = seg.end.clone().applyMatrix4(mat);
+                const i1 = getPtIndex(p1);
+                const i2 = getPtIndex(p2);
+                if (i1 !== i2) lines.push({ a: i1, b: i2 }); // Index references
+            });
+        });
+
+        // 2. Faces
+        this.manualFaces.forEach(face => {
+            const indices = face.indices;
+            const facePoints = indices.map(idx => this.gridPoints[idx]);
+
+            transforms.forEach(mat => {
+                const transformedPolyIndices = facePoints.map(pt => {
+                    const p = pt.clone().applyMatrix4(mat);
+                    return getPtIndex(p);
+                });
+                if (transformedPolyIndices.length >= 3) {
+                    faces.push({
+                        vertices: transformedPolyIndices
+                    });
+                }
+            });
+        });
+
+        return {
+            points: uniquePoints,
+            lines: lines,
+            faces: faces,
+            stats: {
+                pointCount: uniquePoints.length,
+                lineCount: lines.length,
+                faceCount: faces.length
+            }
+        };
     }
 
     _exportOBJ() {
