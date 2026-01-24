@@ -859,14 +859,17 @@ export class App {
         // Actually, let's check if we have `this.currentForm`.
 
         if (this.currentForm) {
-            data = this.currentForm;
+            data = {
+                ...this.currentForm,
+                symmetryState: this.uiManager.getSymmetryState() // Capture ACTIVE UI State
+            };
         } else {
             // Fallback for manual drawing
-            // We reconstruct a basic object
             data = {
                 points: Array.from(this.selectedPointIndices).map(i => this.gridPoints[i]),
                 lines: Array.from(this.edges.values()).map(e => ({ a: e.a, b: e.b })),
-                faces: Array.from(this.manualFaces.values())
+                faces: Array.from(this.manualFaces.values()),
+                symmetryState: this.uiManager.getSymmetryState() // Capture ACTIVE UI State
             };
         }
 
