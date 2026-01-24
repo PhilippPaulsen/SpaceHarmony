@@ -895,6 +895,7 @@ export class App {
     }
 
     async loadFromLibrary(filename) {
+        this.uiManager.showLoading(`Loading ${filename}...`);
         const url = `collections/${filename}`;
         console.log(`[Library] Attempting to fetch: ${url}`);
 
@@ -914,6 +915,11 @@ export class App {
                 }
             } else {
                 // Single Form
+                // NOTE: We do NOT enforce the 'settings' (e.g. system) from the file here.
+                // This allows loading a "Cubic" form (like Hexahedron) while the App is in "Icosahedral" mode.
+                // The points will be mapped to nearest grid nodes or created as new ones.
+                // The CURRENT symmetry settings will then apply to this geometry, potentially creating interesting Compounds.
+                // This behavior is intentional and "Systematized" by not overriding the system unless explicit.
                 this._loadFormToCanvas(data);
             }
 
@@ -924,6 +930,8 @@ export class App {
         } catch (e) {
             console.error("Load failed", e);
             alert("Error loading file: " + e.message);
+        } finally {
+            this.uiManager.hideLoading();
         }
     }
 

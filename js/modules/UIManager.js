@@ -709,5 +709,38 @@ export class UIManager {
             container.appendChild(row);
         });
     }
+
+    showLoading(msg = 'Loading...') {
+        let loader = document.getElementById('ui-loader-overlay');
+        if (!loader) {
+            loader = document.createElement('div');
+            loader.id = 'ui-loader-overlay';
+            loader.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0,0,0,0.5); z-index: 6000;
+                display: flex; justify-content: center; align-items: center;
+                color: white; font-size: 1.2rem; font-weight: bold;
+                backdrop-filter: blur(2px);
+            `;
+            loader.innerHTML = `
+                <div style="background:var(--surface, #222); padding: 20px 40px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); display: flex; flex-direction: column; align-items: center; gap: 10px;">
+                    <div class="spinner" style="border: 4px solid rgba(255,255,255,0.1); border-left-color: var(--primary, #4facfe); border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite;"></div>
+                    <span id="ui-loader-msg">${msg}</span>
+                </div>
+                <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
+            `;
+            document.body.appendChild(loader);
+        } else {
+            const msgEl = document.getElementById('ui-loader-msg');
+            if (msgEl) msgEl.textContent = msg;
+            loader.style.display = 'flex';
+        }
+    }
+
+    hideLoading() {
+        const loader = document.getElementById('ui-loader-overlay');
+        if (loader) loader.style.display = 'none';
+    }
 }
+
 
