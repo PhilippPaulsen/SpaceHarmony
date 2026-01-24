@@ -895,11 +895,13 @@ export class App {
     }
 
     async loadFromLibrary(filename) {
+        const url = `collections/${filename}`;
+        console.log(`[Library] Attempting to fetch: ${url}`);
+
         try {
             // Load via static file
-            // encode filename?
-            const res = await fetch(`collections/${filename}`);
-            if (!res.ok) throw new Error("File not found");
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`File not found: ${url} (Status: ${res.status})`);
             const data = await res.json();
 
             console.log("Loaded:", data);
