@@ -106,7 +106,7 @@ async function updateCollectionIndex() {
 
     const details = await Promise.all(jsonFiles.map(async f => {
       const stat = await fs.promises.stat(path.join(collectionsDir, f));
-      return { filename: f, date: stat.mtime };
+      return { filename: f, name: f.replace('.json', ''), date: stat.mtime };
     }));
 
     await fs.promises.writeFile(path.join(collectionsDir, 'index.json'), JSON.stringify(details, null, 2));
@@ -125,7 +125,7 @@ app.get('/api/collections', async (req, res) => {
 
     const details = await Promise.all(jsonFiles.map(async f => {
       const stat = await fs.promises.stat(path.join(collectionsDir, f));
-      return { filename: f, date: stat.mtime };
+      return { filename: f, name: f.replace('.json', ''), date: stat.mtime };
     }));
 
     res.json(details);

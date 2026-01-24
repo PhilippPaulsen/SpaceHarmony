@@ -21,6 +21,7 @@ Since GitHub Pages is static (read-only), you must use your local computer to cr
 3.  Enter a name (helpfully auto-suggested) and confirm.
     - The server will save the content to `collections/YourFormName.json`.
     - The server will automatically update `collections/index.json` (the list of all files).
+    – Manuell pushen: node update_library.js
 
 ## 3. Publish to GitHub
 To share your new library with the world:

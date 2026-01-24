@@ -32,7 +32,11 @@ async function updateIndex() {
 
         const details = await Promise.all(jsonFiles.map(async f => {
             const stat = await fs.promises.stat(path.join(collectionsDir, f));
-            return { filename: f, date: stat.mtime };
+            return {
+                filename: f,
+                name: f.replace('.json', ''),
+                date: stat.mtime
+            };
         }));
 
         // Sort by date (newest first)

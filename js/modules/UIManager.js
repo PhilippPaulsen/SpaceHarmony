@@ -650,7 +650,7 @@ export class UIManager {
             row.style.cssText = `display:flex; justify-content:space-between; align-items:center; padding:8px; border-bottom:1px solid #333;`;
 
             const nameSpan = document.createElement('span');
-            nameSpan.textContent = f.name;
+            nameSpan.textContent = f.name || f.filename;
             nameSpan.style.fontWeight = 'bold';
 
             const actions = document.createElement('div');
