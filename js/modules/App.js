@@ -2614,31 +2614,85 @@ export class App {
         const lines = [];
         const faces = [];
 
+        // Helper to collect source data
+        let sourceLines = [];
+        let sourceFaces = [];
+        let sourcePoints = this.gridPoints; // default
+
+        if (this.currentForm && this.currentForm.faces && this.currentForm.faces.length > 0) {
+            // Priority: Generated Form
+            // Need to map currentForm structure to abstract indices
+            // Assuming currentForm.points match sourcePoints structure or are self-contained
+            // Actually _displayGeneratedForm maps them.
+            if (this.currentForm.points) sourcePoints = this.currentForm.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
+
+            if (this.currentForm.lines) {
+                sourceLines = this.currentForm.lines.map(l => ({ start: sourcePoints[l.a], end: sourcePoints[l.b] }));
+            }
+            if (this.currentForm.faces) {
+                sourceFaces = this.currentForm.faces.map(f => ({
+                    vertices: f.vertices.map(vi => sourcePoints[vi])
+                }));
+            }
+        } else {
+            // Manual Mode
+            sourceLines = this.baseSegments.map(s => ({ start: s.start, end: s.end }));
+            sourceFaces = Array.from(this.manualFaces.values()).map(f => ({
+                vertices: f.indices.map(i => this.gridPoints[i])
+            }));
+        }
+
         // 1. Lines
-        this.baseSegments.forEach(seg => {
+        sourceLines.forEach(seg => {
             transforms.forEach(mat => {
                 const p1 = seg.start.clone().applyMatrix4(mat);
                 const p2 = seg.end.clone().applyMatrix4(mat);
                 const i1 = getPtIndex(p1);
                 const i2 = getPtIndex(p2);
-                if (i1 !== i2) lines.push({ a: i1, b: i2 }); // Index references
+                if (i1 !== i2) lines.push({ a: i1, b: i2 });
             });
         });
 
-        // 2. Faces
-        this.manualFaces.forEach(face => {
-            const indices = face.indices;
-            const facePoints = indices.map(idx => this.gridPoints[idx]);
+        // 2. Faces (With Normal Correction)
+        // Calculate Centroid of the group for simple outward check
+        // Note: For compound objects, centroid might be 0,0,0 if symmetric.
+        // For individual disjoint volumes, this is harder.
+        // But assuming convex-ish or star forms centered at origin:
+        const center = new THREE.Vector3(0, 0, 0);
+
+        sourceFaces.forEach(face => {
+            // face.vertices is Array of Vector3
+            const faceVerts = face.vertices;
 
             transforms.forEach(mat => {
-                const transformedPolyIndices = facePoints.map(pt => {
-                    const p = pt.clone().applyMatrix4(mat);
-                    return getPtIndex(p);
-                });
-                if (transformedPolyIndices.length >= 3) {
-                    faces.push({
-                        vertices: transformedPolyIndices
-                    });
+                const transformedVerts = faceVerts.map(v => v.clone().applyMatrix4(mat));
+
+                // 2a. Normal Check
+                if (transformedVerts.length >= 3) {
+                    const p0 = transformedVerts[0];
+                    const p1 = transformedVerts[1];
+                    const p2 = transformedVerts[2];
+                    const vA = new THREE.Vector3().subVectors(p1, p0);
+                    const vB = new THREE.Vector3().subVectors(p2, p0);
+                    const normal = new THREE.Vector3().crossVectors(vA, vB).normalize();
+
+                    // Face Center
+                    const triCenter = new THREE.Vector3(0, 0, 0);
+                    transformedVerts.forEach(v => triCenter.add(v));
+                    triCenter.divideScalar(transformedVerts.length);
+
+                    // Vector from Object Center to Face Center
+                    const dir = new THREE.Vector3().subVectors(triCenter, center);
+
+                    // If normal points INWARDS (dot < 0), flip winding
+                    if (normal.dot(dir) < -0.0001) {
+                        transformedVerts.reverse();
+                    }
+                }
+
+                const indices = transformedVerts.map(p => getPtIndex(p));
+                if (indices.length >= 3) {
+                    faces.push({ vertices: indices });
                 }
             });
         });
