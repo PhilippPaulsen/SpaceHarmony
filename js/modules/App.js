@@ -898,7 +898,7 @@ export class App {
         try {
             // Load via static file
             // encode filename?
-            const res = await fetch(`/collections/${filename}`);
+            const res = await fetch(`collections/${filename}`);
             if (!res.ok) throw new Error("File not found");
             const data = await res.json();
 
