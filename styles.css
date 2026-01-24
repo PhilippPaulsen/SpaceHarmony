@@ -544,7 +544,6 @@ output {
   }
 
   /* Modal Styles */
-  /* Modal Styles */
   /* .modal { display: flex !important; } Removed to fix bug where modal overrides hidden state */
 
 
@@ -556,22 +555,33 @@ output {
     backdrop-filter: blur(22px);
     /* consistent with glass-panel */
   }
+}
 
-  .action-btn {
-    background: var(--surface-strong);
-    border: 1px solid var(--outline);
-    padding: 8px 16px;
-    border-radius: var(--radius-small);
-    cursor: pointer;
-    color: var(--text-primary);
-    font-weight: 500;
-    transition: all var(--transition);
-  }
+.action-btn {
+  background: var(--surface-strong);
+  border: 1px solid var(--outline);
+  padding: 8px 16px;
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  color: var(--text-primary);
+  font-weight: 500;
+  transition: all var(--transition);
+}
 
-  .action-btn:hover {
-    background: var(--accent-soft);
-    border-color: var(--accent);
-  }
+.action-btn:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.action-btn.secondary {
+  font-size: 0.9em;
+  padding: 6px 12px;
+  opacity: 0.9;
+}
+
+.action-btn.small {
+  padding: 4px 8px;
+  font-size: 0.8em;
 }
 
 /* Modal Specific Overrides */

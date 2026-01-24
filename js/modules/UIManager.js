@@ -665,38 +665,46 @@ export class UIManager {
             btnLoad.style.padding = '2px 8px';
             btnLoad.onclick = () => app.loadFromLibrary(f.filename);
 
-            const btnRename = document.createElement('button');
-            btnRename.innerHTML = '<span class="material-icons-outlined" style="font-size:16px;">edit</span>';
-            btnRename.title = 'Rename';
-            btnRename.style.background = 'none';
-            btnRename.style.border = 'none';
-            btnRename.style.color = '#ccc';
-            btnRename.style.cursor = 'pointer';
+            actions.append(btnLoad);
 
-            btnRename.onclick = async () => {
-                const newName = prompt("New name:", f.name);
-                if (newName && newName !== f.name) {
-                    await app.renameCollection(f.name, newName);
-                    this.openLibrary(app); // Refresh
-                }
-            };
+            // Only show Edit/Delete if running on Local Server
+            const isLocalhost = window.location.hostname === 'localhost' && window.location.port === '3000';
 
-            const btnDelete = document.createElement('button');
-            btnDelete.innerHTML = '<span class="material-icons-outlined" style="font-size:16px;">delete</span>';
-            btnDelete.title = 'Delete';
-            btnDelete.style.background = 'none';
-            btnDelete.style.border = 'none';
-            btnDelete.style.color = '#f55';
-            btnDelete.style.cursor = 'pointer';
+            if (isLocalhost) {
+                const btnRename = document.createElement('button');
+                btnRename.innerHTML = '<span class="material-icons-outlined" style="font-size:16px;">edit</span>';
+                btnRename.title = 'Rename';
+                btnRename.style.background = 'none';
+                btnRename.style.border = 'none';
+                btnRename.style.color = '#ccc';
+                btnRename.style.cursor = 'pointer';
 
-            btnDelete.onclick = async () => {
-                if (confirm(`Delete ${f.name}?`)) {
-                    await app.deleteCollection(f.filename);
-                    this.openLibrary(app); // Refresh
-                }
-            };
+                btnRename.onclick = async () => {
+                    const newName = prompt("New name:", f.name);
+                    if (newName && newName !== f.name) {
+                        await app.renameCollection(f.name, newName);
+                        this.openLibrary(app); // Refresh
+                    }
+                };
 
-            actions.append(btnLoad, btnRename, btnDelete);
+                const btnDelete = document.createElement('button');
+                btnDelete.innerHTML = '<span class="material-icons-outlined" style="font-size:16px;">delete</span>';
+                btnDelete.title = 'Delete';
+                btnDelete.style.background = 'none';
+                btnDelete.style.border = 'none';
+                btnDelete.style.color = '#f55';
+                btnDelete.style.cursor = 'pointer';
+
+                btnDelete.onclick = async () => {
+                    if (confirm(`Delete ${f.name}?`)) {
+                        await app.deleteCollection(f.filename);
+                        this.openLibrary(app); // Refresh
+                    }
+                };
+
+                actions.append(btnRename, btnDelete);
+            }
+
             row.append(nameSpan, actions);
             container.appendChild(row);
         });
