@@ -651,7 +651,8 @@ export class UIManager {
 
             const nameSpan = document.createElement('span');
             nameSpan.textContent = f.name || f.filename;
-            nameSpan.style.fontWeight = 'bold';
+            nameSpan.style.cursor = 'pointer';
+            nameSpan.onclick = () => app.loadFromLibrary(f.filename);
 
             const actions = document.createElement('div');
             actions.style.display = 'flex';
@@ -695,7 +696,7 @@ export class UIManager {
                 }
             };
 
-            actions.append(btnRename, btnDelete);
+            actions.append(btnLoad, btnRename, btnDelete);
             row.append(nameSpan, actions);
             container.appendChild(row);
         });

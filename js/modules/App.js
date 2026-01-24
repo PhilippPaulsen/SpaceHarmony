@@ -924,32 +924,48 @@ export class App {
     }
 
     _loadFormToCanvas(form) {
-        this._clearCanvas();
-        // Set points
-        // Helper to visualize simple form object
-        // We reuse logic from `_onWorkerMessage` or `_updateGeometry`?
+        this._clearAll();
 
-        // We need to map form points back to GridSystem indices?
-        // Or just render them raw?
-        // Ideally, we snap them to grid if they match.
-        // For visual consistency, let's just render lines/faces via SceneManager directly
-        // OR try to re-hydrate App state.
+        // 1. Generated Form (Standard "Safe" Format with explicit geometry)
+        if (form.points && Array.isArray(form.points)) {
+            this._displayGeneratedForm(form);
+            return;
+        }
 
-        // Re-hydration is hard if density differs.
-        // Let's assume standard grid.
+        // 2. Saved Session (App Export)
+        if (form.baseSegments && Array.isArray(form.baseSegments)) {
+            this._loadJSON(form);
+            return;
+        }
 
-        // Simplest: Use SceneManager to render raw mesh for now?
-        // Or attempt full rehydration.
-        // If it came from Generator, it has `points`, `lines` (indices), `faces` (indices).
+        // 3. Blender/External Export (Wrapped in data/meta)
+        // e.g. Hexahedron.json
+        if (form.data && form.data.segments) {
+            console.log("Detected External/Blender Format");
 
-        // Let's try to set `this.currentForm` and trigger render?
-        // We lack the `Systematic` renderer for arbitrary form.
+            // Extract Grid Settings
+            const divisions = form.data.settings ? form.data.settings.gridDivisions : 1;
 
-        // Let's try to pass it to `_onWorkerMessage` handler logic?
-        // `_onWorkerMessage` expects {type:'success', data: form}.
-        // Let's mimic that.
+            // Convert Segments
+            const segments = form.data.segments.map(s => ({
+                // Handle Array coords [-0.5, 0.5, 0] vs Object {x,y,z}
+                start: Array.isArray(s.start) ? { x: s.start[0], y: s.start[1], z: s.start[2] } : s.start,
+                end: Array.isArray(s.end) ? { x: s.end[0], y: s.end[1], z: s.end[2] } : s.end,
+                indices: s.indices
+            }));
 
-        this._displayGeneratedForm(form);
+            // Create compatible payload for _loadJSON
+            const compatibleData = {
+                gridDivisions: divisions,
+                baseSegments: segments
+            };
+
+            this._loadJSON(compatibleData);
+            return;
+        }
+
+        console.warn("Unknown file format", form);
+        alert("The file format is not recognized.");
     }
 
     _displayGeneratedForm(form) {
