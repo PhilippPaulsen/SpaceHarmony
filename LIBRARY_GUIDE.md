@@ -27,7 +27,7 @@ If you export forms from other software (like Blender) or copy JSON files manual
 1.  **Copy the file** into the `collections/` folder.
 2.  **Update the Index**: The application needs to know about the new file. Run the update script in your terminal:
     
-    > **Note:** Make sure you are in the project folder! (Use `cd path/to/project` if needed).
+    > **Note:** Make sure you are in the project folder! (Use `cd SpaceHarmony` if needed).
     
     ```bash
     node update_library.js
