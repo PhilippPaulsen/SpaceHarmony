@@ -1,0 +1,272 @@
+{
+  "meta": {
+    "label": "03_Hexahedron",
+    "pointCount": 8,
+    "lineCount": 12,
+    "faceCount": 6,
+    "source": "Blender Export",
+    "symmetry": "manual",
+    "type": "manual",
+    "description": "Exported from Blender via SpaceHarmony plugin"
+  },
+  "data": {
+    "meta": {
+      "version": "1.0.0",
+      "createdAt": "2026-01-24T15:13:26.349603Z"
+    },
+    "settings": {
+      "gridDivisions": 1,
+      "showPoints": true,
+      "showGrid": false,
+      "showLabels": false,
+      "snapToGrid": false
+    },
+    "segments": [
+      {
+        "start": [
+          -0.5,
+          -0.5,
+          -0.5
+        ],
+        "end": [
+          0.5,
+          -0.5,
+          -0.5
+        ],
+        "indices": [
+          0,
+          1
+        ],
+        "origin": "manual"
+      },
+      {
+        "start": [
+          -0.5,
+          -0.5,
+          -0.5
+        ],
+        "end": [
+          -0.5,
+          0.5,
+          -0.5
+        ],
+        "indices": [
+          0,
+          3
+        ],
+        "origin": "manual"
+      },
+      {
+        "start": [
+          0.5,
+          0.5,
+          -0.5
+        ],
+        "end": [
+          -0.5,
+          0.5,
+          -0.5
+        ],
+        "indices": [
+          2,
+          3
+        ],
+        "origin": "manual"
+      },
+      {
+        "start": [
+          0.5,
+          -0.5,
+          -0.5
+        ],
+        "end": [
+          0.5,
+          0.5,
+          -0.5
+        ],
+        "indices": [
+          1,
+          2
+        ],
+        "origin": "manual"
+      },
+      {
+        "start": [
+          -0.5,
+          -0.5,
+          -0.5
+        ],
+        "end": [
+          -0.5,
+          -0.5,
+          0.5
+        ],
+        "indices": [
+          0,
+          4
+        ],
+        "origin": "manual"
+      },
+      {
+        "start": [
+          0.5,
+          -0.5,
+          -0.5
+        ],
+        "end": [
+          0.5,
+          -0.5,
+          0.5
+        ],
+        "indices": [
+          1,
+          5
+        ],
+        "origin": "manual"
+      },
+      {
+        "start": [
+          -0.5,
+          -0.5,
+          0.5
+        ],
+        "end": [
+          0.5,
+          -0.5,
+          0.5
+        ],
+        "indices": [
+          4,
+          5
+        ],
+        "origin": "manual"
+      },
+      {
+        "start": [
+          -0.5,
+          -0.5,
+          0.5
+        ],
+        "end": [
+          -0.5,
+          0.5,
+          0.5
+        ],
+        "indices": [
+          4,
+          7
+        ],
+        "origin": "manual"
+      },
+      {
+        "start": [
+          -0.5,
+          0.5,
+          -0.5
+        ],
+        "end": [
+          -0.5,
+          0.5,
+          0.5
+        ],
+        "indices": [
+          3,
+          7
+        ],
+        "origin": "manual"
+      },
+      {
+        "start": [
+          0.5,
+          0.5,
+          -0.5
+        ],
+        "end": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "indices": [
+          2,
+          6
+        ],
+        "origin": "manual"
+      },
+      {
+        "start": [
+          0.5,
+          -0.5,
+          0.5
+        ],
+        "end": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "indices": [
+          5,
+          6
+        ],
+        "origin": "manual"
+      },
+      {
+        "start": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "end": [
+          -0.5,
+          0.5,
+          0.5
+        ],
+        "indices": [
+          6,
+          7
+        ],
+        "origin": "manual"
+      }
+    ],
+    "manualFaces": [
+      [
+        0,
+        3,
+        2,
+        1
+      ],
+      [
+        0,
+        1,
+        5,
+        4
+      ],
+      [
+        0,
+        4,
+        7,
+        3
+      ],
+      [
+        6,
+        5,
+        1,
+        2
+      ],
+      [
+        6,
+        2,
+        3,
+        7
+      ],
+      [
+        6,
+        7,
+        4,
+        5
+      ]
+    ],
+    "manualVolumes": [],
+    "hiddenFaces": [],
+    "hiddenVolumes": []
+  }
+}
