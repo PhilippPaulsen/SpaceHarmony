@@ -215,6 +215,13 @@ export class App {
             // Cubic defaults
             this.symmetry.settings.reflections = { xy: true, yz: true, zx: true };
             this.uiManager.updateSymmetryUI('cubic');
+
+            // CRITICAL: Explicitly uncheck diagonal/ico toggles so they don't leak back in
+            // via getSymmetryState() on next interaction.
+            ['toggle-full-icosa', 'reflection-xy-diag', 'reflection-yz-diag', 'reflection-zx-diag'].forEach(id => {
+                const el = this.uiManager.elements[id];
+                if (el) el.checked = false;
+            });
         }
 
         if (this.sceneManager) {
@@ -223,6 +230,9 @@ export class App {
 
         // Full Cleanup of old forms
         this._clearState();
+
+        // SYNC: Ensure internal engine matches the cleaned UI state immediately
+        this._updateSymmetry();
 
         this._generateGridPoints();
         this._rebuildVisuals();
@@ -601,6 +611,7 @@ export class App {
         this.manualVolumes.clear();
         this.activePointIndex = null;
         this.selectedPointIndices.clear();
+        this.currentForm = null;
 
         // Also clear history? Probably yes, as undoing across system switch is dangerous.
         this.history = [];

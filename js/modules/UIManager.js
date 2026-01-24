@@ -270,17 +270,21 @@ export class UIManager {
     }
 
     getSymmetryState() {
-        // Helper to gather all symmetry ui state
+        // Only return settings that are currently RELEVANT (visible)
+        const isCubic = this.elements['cubic-symmetries']?.style.display !== 'none';
+        const isIco = this.elements['icosahedral-symmetries']?.style.display !== 'none';
+        const isTetra = this.elements['tetrahedral-symmetries']?.style.display !== 'none';
+
         return {
             reflections: {
-                xy: this._getValue('reflection-xy'),
-                yz: this._getValue('reflection-yz'),
-                zx: this._getValue('reflection-zx'),
-                xy_diag: this._getValue('reflection-xy-diag'),
-                yz_diag: this._getValue('reflection-yz-diag'),
-                zx_diag: this._getValue('reflection-zx-diag'),
-                inversion: this._getValue('toggle-inversion'),
-                fullIcosa: this._getValue('toggle-full-icosa')
+                xy: isCubic ? this._getValue('reflection-xy') : false,
+                yz: isCubic ? this._getValue('reflection-yz') : false,
+                zx: isCubic ? this._getValue('reflection-zx') : false,
+                xy_diag: isTetra ? this._getValue('reflection-xy-diag') : false,
+                yz_diag: isTetra ? this._getValue('reflection-yz-diag') : false,
+                zx_diag: isTetra ? this._getValue('reflection-zx-diag') : false,
+                inversion: this._getValue('toggle-inversion'), // Global? Usually Tetra/Cubic
+                fullIcosa: isIco ? this._getValue('toggle-full-icosa') : false
             },
             rotation: {
                 axis: this._getValue('rotation-axis')
