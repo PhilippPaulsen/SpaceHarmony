@@ -153,7 +153,8 @@ export class App {
             onViewOverview: () => this.sceneManager.setView('overview'),
             onCollectSystematic: (dens) => this.collectAllSystematicForms(dens),
             onOpenLibrary: () => this.uiManager.openLibrary(this),
-            onSaveToLibrary: () => this.saveCurrentToLibrary()
+            onSaveToLibrary: () => this.saveCurrentToLibrary(),
+            onToggleCompound: () => this.toggleCompoundMode()
         });
 
         this._updateGridDensity(1);
@@ -2340,6 +2341,34 @@ export class App {
         this.uiManager.updateStatus("Volumes updated from closed faces.");
     }
 
+    toggleCompoundMode() {
+        // Toggle 'baked' status of current geometry
+        // Determine current state based on first segment or face
+        let isBaked = true;
+
+        // Logic: If ANY segment is baked, we treat it as Baked. We want to UNBAKE.
+        // If ALL are unbaked, we want to BAKE.
+
+        if (this.baseSegments.length > 0) {
+            isBaked = this.baseSegments.some(s => s.baked);
+        } else if (this.manualFaces.size > 0) {
+            isBaked = Array.from(this.manualFaces.values()).some(f => f.baked);
+        } else {
+            this.uiManager.updateStatus("No geometry to compound.");
+            return;
+        }
+
+        const newState = !isBaked;
+
+        this.baseSegments.forEach(s => s.baked = newState);
+        this.manualFaces.forEach(f => f.baked = newState);
+
+        this._rebuildSymmetryObjects();
+
+        const status = newState ? "Static (Baked)" : "Compound (Symmetry Applied)";
+        this.uiManager.updateStatus(`Geometry Mode: ${status}`);
+    }
+
     _autoCloseAll() {
         this._buildAdjacencyGraph();
         const faces = this._findAllClosedFaces();
@@ -2969,7 +2998,7 @@ export class App {
                             start: this.gridPoints[idx1],
                             end: this.gridPoints[idx2],
                             layer: 0,
-                            baked: s.baked || false
+                            baked: (s.baked !== undefined) ? s.baked : true // Default to TRUE for safe loading
                         };
                         this.baseSegments.push(segment);
                         this._commitEdge(segment);
@@ -2983,7 +3012,7 @@ export class App {
                 this.manualFaces.set(f.key, {
                     indices: f.indices,
                     origin: f.origin,
-                    baked: f.baked || false,
+                    baked: (f.baked !== undefined) ? f.baked : true, // Default to TRUE
                     _isVolume: false
                 });
             });

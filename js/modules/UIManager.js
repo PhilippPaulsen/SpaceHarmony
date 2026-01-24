@@ -13,7 +13,7 @@ export class UIManager {
             'theme-toggle',
             'undo-button', 'redo-button', 'clear-button', 'random-form-button',
             'view-z', 'view-iso', 'view-overview',
-            'save-to-library', 'export-json-button', 'export-obj-button', 'export-png-button',
+            'save-to-library', 'btn-make-compound', 'export-json-button', 'export-obj-button', 'export-png-button',
             'grid-density', 'toggle-auto-rotate', 'coord-system',
             'toggle-points', 'toggle-lines', 'toggle-show-closed', 'toggle-cube-frame',
             'toggle-curved-lines', 'toggle-curved-surfaces', 'curve-convexity',
@@ -56,6 +56,7 @@ export class UIManager {
 
         // Import/Export
         this._bindClick('save-to-library', 'onSaveToLibrary');
+        this._bindClick('btn-make-compound', 'onToggleCompound');
         this._bindClick('export-json-button', 'onExportJSON');
         this._bindClick('export-obj-button', 'onExportOBJ');
         this._bindClick('export-png-button', 'onExportPNG');
