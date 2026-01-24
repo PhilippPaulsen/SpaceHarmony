@@ -1029,7 +1029,8 @@ export class App {
                             indices: [idx1, idx2],
                             start: this.gridPoints[idx1],
                             end: this.gridPoints[idx2],
-                            layer: 0
+                            layer: 0,
+                            baked: true // Prevent re-application of symmetry
                         };
                         if (!this.baseSegments.some(bs => bs.key === segment.key)) {
                             this.baseSegments.push(segment);
@@ -1050,7 +1051,8 @@ export class App {
                             const faceObj = {
                                 indices: mappedIndices,
                                 origin: 'manual',
-                                _isVolume: false
+                                _isVolume: false,
+                                baked: true
                             };
                             this.manualFaces.set(faceKey, faceObj);
                         }
@@ -1782,17 +1784,29 @@ export class App {
             } else {
                 // Standard Straight Lines
                 const points = [];
+                const bakedPoints = [];
 
                 this.baseSegments.forEach(seg => {
-                    transforms.forEach(matrix => {
-                        const start = seg.start.clone().applyMatrix4(matrix);
-                        const end = seg.end.clone().applyMatrix4(matrix);
-                        points.push(start, end);
-                    });
+                    if (seg.baked) {
+                        // Render ONCE (Identity)
+                        bakedPoints.push(seg.start, seg.end);
+                    } else {
+                        // Render Multiplied
+                        transforms.forEach(matrix => {
+                            const start = seg.start.clone().applyMatrix4(matrix);
+                            const end = seg.end.clone().applyMatrix4(matrix);
+                            points.push(start, end);
+                        });
+                    }
                 });
 
                 if (points.length > 0) {
                     const geom = new THREE.BufferGeometry().setFromPoints(points);
+                    const lines = new THREE.LineSegments(geom, lineMat);
+                    this.symmetryGroup.add(lines);
+                }
+                if (bakedPoints.length > 0) {
+                    const geom = new THREE.BufferGeometry().setFromPoints(bakedPoints);
                     const lines = new THREE.LineSegments(geom, lineMat);
                     this.symmetryGroup.add(lines);
                 }
@@ -1814,19 +1828,47 @@ export class App {
                 // If origin is 'auto' or 'generated', it comes from the full graph/loader which already accounts for symmetry
                 // So we render it ONCE (Identity).
                 // If origin is 'manual' (user created single face), we might want to mirror it?
-                // Actually, if we want consistency: User manual faces usually want symmetry.
-                const useTransforms = (face.origin === 'manual');
+                // But if it is 'baked' (from import), we use Identity.
+                const useTransforms = (face.origin === 'manual' && !face.baked);
                 this._renderFace(face, mat, useTransforms ? transforms : identity);
             });
 
             // Render Auto Faces (baseFaces)
             this.baseFaces.forEach(face => {
                 if (this.manualFaces.has(face.key)) return;
-                this._renderFace(face, face._isVolume ? volumeMat : faceMat, identity); // Auto faces already include symmetry if graph built fully? No, graph assumes base symmetry?
-                // Actually, auto-faces are built from the graph. The graph is built from base segments + manual connections?
-                // In current architecture, adjacency graph is just BASE segments.
-                // So auto-faces need transforms too!
-                this._renderFace(face, face._isVolume ? volumeMat : faceMat, transforms);
+
+                // Detect if face is 'baked' (all edges are baked)
+                let isBaked = false;
+                if (face.keys && face.keys.length > 0) {
+                    // Check edges
+                    let allEdgesBaked = true;
+                    const keys = face.keys;
+                    for (let i = 0; i < keys.length; i++) {
+                        const k1 = keys[i];
+                        const k2 = keys[(i + 1) % keys.length];
+                        // Reconstruct segment (Edge)
+                        // Note: point objects might differ, but keys are stable.
+                        // We use the keys to lookup edge in this.edges?
+                        // GeometryUtils.segmentKey uses Vector3s. We need points.
+                        const p1 = this.pointLookup.get(k1);
+                        const p2 = this.pointLookup.get(k2);
+                        if (p1 && p2) {
+                            const segKey = GeometryUtils.segmentKey(p1, p2);
+                            const seg = this.edges.get(segKey);
+                            if (!seg || !seg.baked) {
+                                allEdgesBaked = false;
+                                break;
+                            }
+                        } else {
+                            allEdgesBaked = false;
+                            break;
+                        }
+                    }
+                    isBaked = allEdgesBaked;
+                }
+
+                // If baked, use Identity. Else Transforms.
+                this._renderFace(face, face._isVolume ? volumeMat : faceMat, isBaked ? identity : transforms);
             });
         }
 
@@ -2603,12 +2645,14 @@ export class App {
             baseSegments: this.baseSegments.map(s => ({
                 indices: s.indices,
                 start: s.start,
-                end: s.end
+                end: s.end,
+                baked: s.baked
             })),
             manualFaces: Array.from(this.manualFaces.entries()).map(([k, v]) => ({
                 key: k,
                 indices: v.indices,
-                origin: v.origin
+                origin: v.origin,
+                baked: v.baked
             })),
             symmetryState: this.uiManager.getSymmetryState(),
             // New: Baked Geometry (Explicit "Amalgam" Export)
@@ -2924,7 +2968,8 @@ export class App {
                             indices: [idx1, idx2],
                             start: this.gridPoints[idx1],
                             end: this.gridPoints[idx2],
-                            layer: 0
+                            layer: 0,
+                            baked: s.baked || false
                         };
                         this.baseSegments.push(segment);
                         this._commitEdge(segment);
@@ -2932,6 +2977,18 @@ export class App {
                 }
             });
         }
+
+        if (data.manualFaces) {
+            data.manualFaces.forEach(f => {
+                this.manualFaces.set(f.key, {
+                    indices: f.indices,
+                    origin: f.origin,
+                    baked: f.baked || false,
+                    _isVolume: false
+                });
+            });
+        }
+
         this._updateFaces();
         this._rebuildSymmetryObjects();
     }
