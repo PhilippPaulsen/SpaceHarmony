@@ -2712,139 +2712,28 @@ export class App {
     _exportOBJ() {
         let output = "# SpaceHarmony OBJ Export\n";
 
-        // We need to export the VISIBLE geometry (including symmetries).
-        const transforms = this.symmetry.getTransforms();
+        // Use the shared geometry generator to ensure consistency (and Generated Forms support)
+        // This handles Symmetries, Generated Faces, Normal Correction, and Deduplication.
+        const baked = this._generateBakedGeometry();
 
-        // 1. Gather all unique vertices from the visualized form
-        const vertices = [];
-        // Map "x,y,z" -> specific 1-based index in OBJ
-        const vMap = new Map();
-
-        const addUniqueVertex = (v) => {
-            // Precision for key to avoid micro-gaps
-            const key = `${v.x.toFixed(6)}_${v.y.toFixed(6)}_${v.z.toFixed(6)}`;
-            if (!vMap.has(key)) {
-                vMap.set(key, vertices.length + 1);
-                vertices.push(v);
-                return vertices.length; // 1-based already
-            }
-            return vMap.get(key);
-        };
-
-        const finalLines = [];
-
-        // 2. Generate Lines (Straight or Curved)
-        if (this.showCurvedLines) {
-            // _tracePaths expects segment objects with .indices
-            const paths = this._tracePaths(this.baseSegments);
-            paths.forEach(pathIndices => {
-                // pathIndices is [i1, i2, i3...]
-                const points = pathIndices.map(i => this.gridPoints[i]);
-                const curvePoints = this._getCurvePoints(points);
-
-                transforms.forEach(mat => {
-                    const transformedPoints = curvePoints.map(p => p.clone().applyMatrix4(mat));
-                    const indices = transformedPoints.map(p => addUniqueVertex(p));
-
-                    // OBJ uses 'l v1 v2 v3 ...' for polylines
-                    if (indices.length > 1) {
-                        finalLines.push(`l ${indices.join(' ')}`);
-                    }
-                });
-            });
-        } else {
-            this.baseSegments.forEach(seg => {
-                transforms.forEach(mat => {
-                    const p1 = seg.start.clone().applyMatrix4(mat);
-                    const p2 = seg.end.clone().applyMatrix4(mat);
-                    const i1 = addUniqueVertex(p1);
-                    const i2 = addUniqueVertex(p2);
-                    if (i1 !== i2) {
-                        finalLines.push(`l ${i1} ${i2}`);
-                    }
-                });
-            });
-        }
-
-        // 3. Collect Faces
-        // 3. Collect Faces
-        const objFaces = [];
-        this.manualFaces.forEach(face => {
-            const indices = face.indices;
-            const facePoints = indices.map(idx => this.gridPoints[idx]);
-
-            let curvedGeom = null;
-            // Only support curved export for triangles as per current rendering logic
-            // Check this.useCurvedSurfaces (correct property)
-            if (this.useCurvedSurfaces && facePoints.length === 3) {
-                // curvatureScale 1.1 matches _renderFace logic
-                curvedGeom = this._buildCurvedTriangleGeometry(facePoints, { curvatureScale: 1.1 });
-            }
-
-            if (curvedGeom) {
-                // Export Dense Mesh (Vertices + Faces)
-                const attrPos = curvedGeom.getAttribute('position');
-                const index = curvedGeom.getIndex();
-
-                transforms.forEach(mat => {
-                    // Map local geometry indices to global OBJ vertex indices
-                    const localIndices = [];
-                    for (let i = 0; i < attrPos.count; i++) {
-                        const p = new THREE.Vector3().fromBufferAttribute(attrPos, i);
-                        p.applyMatrix4(mat);
-                        localIndices.push(addUniqueVertex(p));
-                    }
-
-                    // Add Faces from Geometry
-                    if (index) {
-                        for (let i = 0; i < index.count; i += 3) {
-                            objFaces.push([
-                                localIndices[index.getX(i)],
-                                localIndices[index.getX(i + 1)],
-                                localIndices[index.getX(i + 2)]
-                            ]);
-                        }
-                    } else {
-                        for (let i = 0; i < attrPos.count; i += 3) {
-                            objFaces.push([
-                                localIndices[i],
-                                localIndices[i + 1],
-                                localIndices[i + 2]
-                            ]);
-                        }
-                    }
-                });
-                // Cleanup
-                curvedGeom.dispose();
-            } else {
-                // Standard Polygon Export
-                transforms.forEach(mat => {
-                    const polyIndices = [];
-                    facePoints.forEach(pt => {
-                        const p = pt.clone().applyMatrix4(mat);
-                        polyIndices.push(addUniqueVertex(p));
-                    });
-
-                    if (polyIndices.length >= 3) {
-                        objFaces.push(polyIndices);
-                    }
-                });
-            }
-        });
-
-        // 4. Write Output
-        vertices.forEach(v => {
+        // 1. Vertices
+        baked.points.forEach(v => {
             output += `v ${v.x.toFixed(6)} ${v.y.toFixed(6)} ${v.z.toFixed(6)}\n`;
         });
 
+        // 2. Lines
         output += `\ng lines\n`;
-        finalLines.forEach(lineStr => {
-            output += `${lineStr}\n`;
+        baked.lines.forEach(l => {
+            // Baked lines are 0-indexed, OBJ is 1-indexed
+            output += `l ${l.a + 1} ${l.b + 1}\n`;
         });
 
+        // 3. Faces
         output += `\ng faces\n`;
-        objFaces.forEach(f => {
-            output += `f ${f.join(' ')}\n`;
+        baked.faces.forEach(f => {
+            // Baked faces are 0-indexed, OBJ is 1-indexed
+            const indices = f.vertices.map(i => i + 1);
+            output += `f ${indices.join(' ')}\n`;
         });
 
         const blob = new Blob([output], { type: 'text/plain' });
