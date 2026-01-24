@@ -2630,9 +2630,13 @@ export class App {
                 sourceLines = this.currentForm.lines.map(l => ({ start: sourcePoints[l.a], end: sourcePoints[l.b] }));
             }
             if (this.currentForm.faces) {
-                sourceFaces = this.currentForm.faces.map(f => ({
-                    vertices: f.vertices.map(vi => sourcePoints[vi])
-                }));
+                sourceFaces = this.currentForm.faces.map(f => {
+                    const indices = Array.isArray(f) ? f : (f.vertices || f.indices);
+                    if (!indices) return { vertices: [] };
+                    return {
+                        vertices: indices.map(vi => sourcePoints[vi]).filter(p => !!p)
+                    };
+                });
             }
         } else {
             // Manual Mode
