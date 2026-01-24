@@ -789,10 +789,12 @@ export class App {
 
     async fetchLibrary() {
         // 1. Try Dynamic API (Local Server Node.js)
-        try {
-            const res = await fetch('/api/collections');
-            if (res.ok) return await res.json();
-        } catch (e) { /* Ignore network errors */ }
+        if (window.location.hostname === 'localhost' && window.location.port === '3000') {
+            try {
+                const res = await fetch('/api/collections');
+                if (res.ok) return await res.json();
+            } catch (e) { /* Ignore network errors */ }
+        }
 
         // 2. Try Static Index (GitHub Pages / VS Code Live Server)
         try {
@@ -939,28 +941,92 @@ export class App {
         }
 
         // 3. Blender/External Export (Wrapped in data/meta)
-        // e.g. Hexahedron.json
         if (form.data && form.data.segments) {
             console.log("Detected External/Blender Format");
 
             // Extract Grid Settings
             const divisions = form.data.settings ? form.data.settings.gridDivisions : 1;
+            this._updateGridDensity(divisions);
 
-            // Convert Segments
-            const segments = form.data.segments.map(s => ({
-                // Handle Array coords [-0.5, 0.5, 0] vs Object {x,y,z}
-                start: Array.isArray(s.start) ? { x: s.start[0], y: s.start[1], z: s.start[2] } : s.start,
-                end: Array.isArray(s.end) ? { x: s.end[0], y: s.end[1], z: s.end[2] } : s.end,
-                indices: s.indices
-            }));
+            // Phase 1: Collect Points & Map Indices
+            const indexMap = new Map(); // OriginalIndex -> AppGridIndex
+            const segmentsData = form.data.segments;
 
-            // Create compatible payload for _loadJSON
-            const compatibleData = {
-                gridDivisions: divisions,
-                baseSegments: segments
-            };
+            // Helper to get unique Vector3 from array or object
+            const getVec = (v) => Array.isArray(v) ? new THREE.Vector3(v[0], v[1], v[2]) : new THREE.Vector3(v.x, v.y, v.z);
 
-            this._loadJSON(compatibleData);
+            segmentsData.forEach(s => {
+                const coords = [getVec(s.start), getVec(s.end)];
+                const indices = s.indices || [-1, -1];
+
+                coords.forEach((p, i) => {
+                    const originalID = indices[i];
+                    if (originalID === -1) return;
+                    if (indexMap.has(originalID)) return;
+
+                    // Match existing or Add new point
+                    let nearestIdx = this._findNearestPointIndex(p);
+                    if (nearestIdx === -1) {
+                        nearestIdx = this.gridPoints.length;
+                        this.gridPoints.push(p);
+
+                        const key = GeometryUtils.pointKey(p);
+                        this.pointLookup.set(key, p);
+                        this.pointIndexLookup.set(key, nearestIdx);
+                        this.pointKeyLookup.set(nearestIdx, key);
+                    }
+                    indexMap.set(originalID, nearestIdx);
+                });
+            });
+
+            this._rebuildVisuals();
+
+            // Phase 2: Create Segments
+            segmentsData.forEach(s => {
+                const iStart = s.indices ? s.indices[0] : -1;
+                const iEnd = s.indices ? s.indices[1] : -1;
+
+                if (indexMap.has(iStart) && indexMap.has(iEnd)) {
+                    const idx1 = indexMap.get(iStart);
+                    const idx2 = indexMap.get(iEnd);
+
+                    if (idx1 !== idx2) {
+                        const segment = {
+                            key: GeometryUtils.segmentKey(this.gridPoints[idx1], this.gridPoints[idx2]),
+                            indices: [idx1, idx2],
+                            start: this.gridPoints[idx1],
+                            end: this.gridPoints[idx2],
+                            layer: 0
+                        };
+                        if (!this.baseSegments.some(bs => bs.key === segment.key)) {
+                            this.baseSegments.push(segment);
+                            this._commitEdge(segment);
+                        }
+                    }
+                }
+            });
+
+            // Phase 3: Create Manual Faces (using mapped indices)
+            if (form.data.manualFaces && Array.isArray(form.data.manualFaces)) {
+                form.data.manualFaces.forEach(faceIndices => {
+                    const mappedIndices = faceIndices.map(oldIdx => indexMap.get(oldIdx)).filter(x => x !== undefined);
+                    if (mappedIndices.length >= 3) {
+                        const pointKeys = mappedIndices.map(idx => this.pointKeyLookup.get(idx));
+                        if (pointKeys.every(k => k)) {
+                            const faceKey = GeometryUtils.faceKeyFromKeys(pointKeys);
+                            const faceObj = {
+                                indices: mappedIndices,
+                                origin: 'manual',
+                                _isVolume: false
+                            };
+                            this.manualFaces.set(faceKey, faceObj);
+                        }
+                    }
+                });
+            }
+
+            this._updateFaces();
+            this._rebuildSymmetryObjects();
             return;
         }
 
