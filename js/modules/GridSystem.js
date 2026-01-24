@@ -113,8 +113,8 @@ export class GridSystem {
         }
 
         // 3. Pentagram Intersections (Star Points)
-        // Enable at Density >= 2 so they are available immediately with the Dodecahedron
-        if (density >= 2) {
+        // Enable at Density >= 3 (Granular Step)
+        if (density >= 3) {
             const starPoints = [];
             const phiSq = phi * phi;
             const starScale = 1.0 / phiSq; // 0.381966
@@ -224,33 +224,30 @@ export class GridSystem {
                         if (density < 5.0) {
                             const h = d / 2;
                             const isCenter = (ax === 0 && ay === 0 && az === 0);
+                            const isCorner = (ax === d && ay === d && az === d); // (2,2,2)
+                            const isFaceCenter = ((ax === d && ay === 0 && az === 0) || (ay === d && ax === 0 && az === 0) || (az === d && ax === 0 && ay === 0)); // (2,0,0)
+                            const isEdgeMid = ((ax === d && ay === d && az === 0) || (ax === d && az === d && ay === 0) || (ay === d && az === d && ax === 0)); // (2,2,0)
 
-                            if (density <= 1.5) {
-                                const isCorner = (ax === d && ay === d && az === d);
-                                const isFaceCenter = ((ax === d && ay === 0 && az === 0) || (ay === d && ax === 0 && az === 0) || (az === d && ax === 0 && ay === 0));
-                                const isVE = ((ax === h && ay === h && az === 0) || (ax === h && az === h && ay === 0) || (ay === h && az === h && ax === 0));
+                            // NOTE: 'isVE' from original code (h,h,0) is effectively Level 4 (Inner)
 
-                                if (!isCenter && !isCorner && !isFaceCenter && !isVE) continue;
-                            }
-                            else if (density <= 2.5) {
-                                const isCorner = (ax === d && ay === d && az === d);
-                                const isFaceCenter = ((ax === d && ay === 0 && az === 0) || (ay === d && ax === 0 && az === 0) || (az === d && ax === 0 && ay === 0));
-                                const isVE = ((ax === h && ay === h && az === 0) || (ax === h && az === h && ay === 0) || (ay === h && az === h && ax === 0));
-                                const isEdgeMid = ((ax === d && ay === d && az === 0) || (ax === d && az === d && ay === 0) || (ay === d && az === d && ax === 0));
-                                const isSubCorner = (ax === h && ay === h && az === h);
+                            let include = false;
 
-                                if (!isCenter && !isCorner && !isFaceCenter && !isVE && !isEdgeMid && !isSubCorner) continue;
+                            // Hierarchy
+                            if (isCenter) include = true;
+                            else if (density >= 1 && isCorner) include = true;
+                            else if (density >= 2 && isFaceCenter) include = true;
+                            else if (density >= 3 && isEdgeMid) include = true;
+                            else if (density >= 4) {
+                                // Density 4: Inner Structure (Vector Equilibrium + Inner Frame)
+                                // Instead of full fill, show the mid-volume structural nodes
+                                const isInnerVE = ((ax === h && ay === h && az === 0) || (ax === h && az === h && ay === 0) || (ay === h && az === h && ax === 0));
+                                const isInnerCorner = (ax === h && ay === h && az === h);
+                                const isInnerFace = ((ax === h && ay === 0 && az === 0) || (ay === h && ax === 0 && az === 0) || (az === h && ax === 0 && ay === 0));
+
+                                if (isInnerVE || isInnerCorner || isInnerFace) include = true;
                             }
-                            else {
-                                if (x % 2 !== 0 || y % 2 !== 0 || z % 2 !== 0) continue;
-                                const maxCoord = Math.max(ax, ay, az);
-                                if (density <= 3.5) {
-                                    if (maxCoord < d * 0.5) continue;
-                                }
-                                else {
-                                    if (maxCoord < d * 0.3) continue;
-                                }
-                            }
+
+                            if (!include) continue;
                         }
 
                         const v = new THREE.Vector3(x, y, z).multiplyScalar(step);
