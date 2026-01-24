@@ -2059,7 +2059,10 @@ export class App {
                 const mesh = new THREE.Mesh(instanceGeom, material);
                 this.symmetryGroup.add(mesh);
             });
-            geometry.dispose();
+            // Don't dispose immediately if we cloned? Actually geometry helper creates new one.
+            // But we should dispose the base geometry after cloning is done to avoid leaks.
+            // Wait, geometry is local const.
+            // geometry.dispose(); // Safe.
         }
     }
 
@@ -2613,13 +2616,21 @@ export class App {
         const vMap = new Map();
         const uniquePoints = []; // Stores {x,y,z}
 
+        // 1. Robust Vertex Merging (High Tolerance)
+        const EPSILON_SQ = 0.01 * 0.01; // 0.01 Tolerance
         const getPtIndex = (v) => {
-            const key = `${v.x.toFixed(6)}_${v.y.toFixed(6)}_${v.z.toFixed(6)}`;
-            if (!vMap.has(key)) {
-                vMap.set(key, uniquePoints.length);
-                uniquePoints.push({ x: v.x, y: v.y, z: v.z });
+            for (let i = 0; i < uniquePoints.length; i++) {
+                const p = uniquePoints[i];
+                const dx = p.x - v.x;
+                const dy = p.y - v.y;
+                const dz = p.z - v.z;
+                if (dx * dx + dy * dy + dz * dz < EPSILON_SQ) {
+                    return i;
+                }
             }
-            return vMap.get(key);
+            // New point
+            uniquePoints.push({ x: v.x, y: v.y, z: v.z });
+            return uniquePoints.length - 1;
         };
 
         const lines = [];
@@ -2632,9 +2643,6 @@ export class App {
 
         if (this.currentForm && this.currentForm.faces && this.currentForm.faces.length > 0) {
             // Priority: Generated Form
-            // Need to map currentForm structure to abstract indices
-            // Assuming currentForm.points match sourcePoints structure or are self-contained
-            // Actually _displayGeneratedForm maps them.
             if (this.currentForm.points) sourcePoints = this.currentForm.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
 
             if (this.currentForm.lines) {
@@ -2653,61 +2661,38 @@ export class App {
             // Manual Mode
             sourceLines = this.baseSegments.map(s => ({ start: s.start, end: s.end }));
             sourceFaces = Array.from(this.manualFaces.values()).map(f => ({
-                vertices: f.indices.map(i => this.gridPoints[i])
-            }));
+                vertices: f.indices.map(i => this.gridPoints[i]).filter(p => !!p)
+            })).filter(f => f.vertices.length >= 3);
         }
 
-        // 1. Lines
-        sourceLines.forEach(seg => {
-            transforms.forEach(mat => {
-                const p1 = seg.start.clone().applyMatrix4(mat);
-                const p2 = seg.end.clone().applyMatrix4(mat);
-                const i1 = getPtIndex(p1);
-                const i2 = getPtIndex(p2);
-                if (i1 !== i2) lines.push({ a: i1, b: i2 });
+        // 1. Lines - ONLY if no faces exist
+        if (sourceFaces.length === 0) {
+            sourceLines.forEach(seg => {
+                transforms.forEach(mat => {
+                    const p1 = seg.start.clone().applyMatrix4(mat);
+                    const p2 = seg.end.clone().applyMatrix4(mat);
+                    const i1 = getPtIndex(p1);
+                    const i2 = getPtIndex(p2);
+                    if (i1 !== i2) lines.push({ a: i1, b: i2 });
+                });
             });
-        });
+        }
 
-        // 2. Faces (With Normal Correction)
-        // Calculate Centroid of the group for simple outward check
-        // Note: For compound objects, centroid might be 0,0,0 if symmetric.
-        // For individual disjoint volumes, this is harder.
-        // But assuming convex-ish or star forms centered at origin:
-        const center = new THREE.Vector3(0, 0, 0);
-
+        // 2. Faces (Force Triangulation)
         sourceFaces.forEach(face => {
-            // face.vertices is Array of Vector3
             const faceVerts = face.vertices;
-
             transforms.forEach(mat => {
                 const transformedVerts = faceVerts.map(v => v.clone().applyMatrix4(mat));
 
-                // 2a. Normal Check
-                if (transformedVerts.length >= 3) {
-                    const p0 = transformedVerts[0];
-                    const p1 = transformedVerts[1];
-                    const p2 = transformedVerts[2];
-                    const vA = new THREE.Vector3().subVectors(p1, p0);
-                    const vB = new THREE.Vector3().subVectors(p2, p0);
-                    const normal = new THREE.Vector3().crossVectors(vA, vB).normalize();
-
-                    // Face Center
-                    const triCenter = new THREE.Vector3(0, 0, 0);
-                    transformedVerts.forEach(v => triCenter.add(v));
-                    triCenter.divideScalar(transformedVerts.length);
-
-                    // Vector from Object Center to Face Center
-                    const dir = new THREE.Vector3().subVectors(triCenter, center);
-
-                    // If normal points INWARDS (dot < 0), flip winding
-                    if (normal.dot(dir) < -0.0001) {
-                        transformedVerts.reverse();
-                    }
-                }
-
                 const indices = transformedVerts.map(p => getPtIndex(p));
+
+                // SIMPLE TRIANGLE FAN
                 if (indices.length >= 3) {
-                    faces.push({ vertices: indices });
+                    const p0 = indices[0];
+                    for (let i = 1; i < indices.length - 1; i++) {
+                        // Creates triangles: (0, 1, 2), (0, 2, 3), etc.
+                        faces.push({ vertices: [p0, indices[i], indices[i + 1]] });
+                    }
                 }
             });
         });
@@ -2726,6 +2711,7 @@ export class App {
 
     _exportOBJ() {
         let output = "# SpaceHarmony OBJ Export\n";
+        output += "o SpaceHarmonyObject\n";
 
         // Use the shared geometry generator to ensure consistency (and Generated Forms support)
         // This handles Symmetries, Generated Faces, Normal Correction, and Deduplication.
@@ -2736,19 +2722,21 @@ export class App {
             output += `v ${v.x.toFixed(6)} ${v.y.toFixed(6)} ${v.z.toFixed(6)}\n`;
         });
 
-        // 2. Lines
-        output += `\ng lines\n`;
-        baked.lines.forEach(l => {
-            // Baked lines are 0-indexed, OBJ is 1-indexed
-            output += `l ${l.a + 1} ${l.b + 1}\n`;
-        });
+        // 2. Lines (Strictly skipping if faces exist to force Mesh import in Blender)
+        if (baked.faces.length === 0) {
+            baked.lines.forEach(l => {
+                output += `l ${l.a + 1} ${l.b + 1}\n`;
+            });
+        }
 
         // 3. Faces
-        output += `\ng faces\n`;
+        // output += `\ng faces\n`;
         baked.faces.forEach(f => {
             // Baked faces are 0-indexed, OBJ is 1-indexed
             const indices = f.vertices.map(i => i + 1);
-            output += `f ${indices.join(' ')}\n`;
+            if (indices.length >= 3) {
+                output += `f ${indices.join(' ')}\n`;
+            }
         });
 
         const blob = new Blob([output], { type: 'text/plain' });
