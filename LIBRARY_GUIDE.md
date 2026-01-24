@@ -21,9 +21,21 @@ Since GitHub Pages is static (read-only), you must use your local computer to cr
 3.  Enter a name (helpfully auto-suggested) and confirm.
     - The server will save the content to `collections/YourFormName.json`.
     - The server will automatically update `collections/index.json` (the list of all files).
-    – Manuell pushen: node update_library.js
+## 3. Manually Adding External Forms (e.g. from Blender)
+If you export forms from other software (like Blender) or copy JSON files manually into the `collections/` folder:
 
-## 3. Publish to GitHub
+1.  **Copy the file** into the `collections/` folder.
+2.  **Update the Index**: The application needs to know about the new file. Run the update script in your terminal:
+    
+    > **Note:** Make sure you are in the project folder! (Use `cd path/to/project` if needed).
+    
+    ```bash
+    node update_library.js
+    ```
+    
+    You should see a message like: `✅ Successfully updated 'collections/index.json'`
+
+## 4. Publish to GitHub
 To share your new library with the world:
 
 1.  Stop the server (Ctrl+C).
@@ -34,7 +46,7 @@ To share your new library with the world:
     git push
     ```
 
-## 4. Result
+## 5. Result
 Once GitHub Pages rebuilds (usually 1-2 minutes):
 - Visitors on your website will see the updated Library list.
 - They can load the forms you created.
