@@ -2703,8 +2703,9 @@ export class App {
         const uniquePoints = []; // Stores {x,y,z}
         const uniqueFaceKeys = new Set(); // For Deduplication
 
-        // 1. Robust Vertex Merging (High Tolerance)
-        const EPSILON_SQ = 0.01 * 0.01; // 0.01 Tolerance
+        // 1. Robust Vertex Merging (High Tolerance -> High Precision)
+        // Reduced tolerance to prevent collapsing distinct details in complex compounds
+        const EPSILON_SQ = 0.0001 * 0.0001;
         const getPtIndex = (v) => {
             for (let i = 0; i < uniquePoints.length; i++) {
                 const p = uniquePoints[i];
@@ -2728,9 +2729,13 @@ export class App {
         let sourceFaces = [];
         let sourcePoints = this.gridPoints; // default
 
+        // ... existing selection logic ...
+
         if (this.currentForm && this.currentForm.faces && this.currentForm.faces.length > 0) {
             // Priority: Generated Form (Already Full Geometry)
-            if (this.currentForm.points) sourcePoints = this.currentForm.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
+            const pts = this.currentForm.points;
+            // Map plain objects to Vectors
+            sourcePoints = pts ? pts.map(p => new THREE.Vector3(p.x, p.y, p.z)) : [];
 
             if (this.currentForm.lines) {
                 sourceLines = this.currentForm.lines.map(l => ({
@@ -2761,6 +2766,8 @@ export class App {
                 vertices: f.indices.map(i => this.gridPoints[i]).filter(p => !!p),
                 useTransforms: (f.origin === 'manual' && !f.baked) // Transform if manual and unbaked
             })).filter(f => f.vertices.length >= 3);
+
+
 
             const auto = this.baseFaces.filter(f => !this.manualFaces.has(f.key)).map(f => {
                 const vertices = f.keys.map(k => this.pointLookup.get(k)).filter(p => !!p);
@@ -2842,7 +2849,15 @@ export class App {
                     indices.reverse();
                 }
 
-                if (indices.length >= 3) {
+                // Filter 1: Remove consecutive duplicates (resulting from vertex merging)
+                indices = indices.filter((idx, i) => i === 0 || idx !== indices[i - 1]);
+                // Filter 2: Remove wrap-around duplicate
+                if (indices.length > 0 && indices[indices.length - 1] === indices[0]) {
+                    indices.pop();
+                }
+
+                // Check for valid face (At least 3 UNIQUE vertices)
+                if (indices.length >= 3 && new Set(indices).size >= 3) {
                     // Deduplication Key: Sorted indices (Structure only, winding agnostic)
                     const key = indices.slice().sort((a, b) => a - b).join('_');
 
