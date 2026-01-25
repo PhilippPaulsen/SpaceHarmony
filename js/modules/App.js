@@ -1898,7 +1898,11 @@ export class App {
         // Update counts logic
         // If we render with identity, count is 1. If transforms, count is N.
         let faceCount = 0;
-        this.manualFaces.forEach(f => { faceCount += (f.origin === 'manual' ? transforms.length : 1); });
+        this.manualFaces.forEach(f => {
+            // Correct Logic: "Origin manual + Not Baked = N". Else 1.
+            const isMultiplied = (f.origin === 'manual' && !f.baked);
+            faceCount += (isMultiplied ? transforms.length : 1);
+        });
 
         // baseFaces are Identity
         this.baseFaces.forEach(f => {
@@ -2695,8 +2699,9 @@ export class App {
     _generateBakedGeometry() {
         // Similar to OBJ export but returns structured data
         const transforms = this.symmetry.getTransforms();
-        const vMap = new Map();
+        const identity = [new THREE.Matrix4()]; // Identity matrix for baked/generated forms
         const uniquePoints = []; // Stores {x,y,z}
+        const uniqueFaceKeys = new Set(); // For Deduplication
 
         // 1. Robust Vertex Merging (High Tolerance)
         const EPSILON_SQ = 0.01 * 0.01; // 0.01 Tolerance
@@ -2718,62 +2723,86 @@ export class App {
         const lines = [];
         const faces = [];
 
-        // Helper to collect source data
+        // Helper to collect source data with metadata
         let sourceLines = [];
         let sourceFaces = [];
         let sourcePoints = this.gridPoints; // default
 
         if (this.currentForm && this.currentForm.faces && this.currentForm.faces.length > 0) {
-            // Priority: Generated Form
+            // Priority: Generated Form (Already Full Geometry)
             if (this.currentForm.points) sourcePoints = this.currentForm.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
 
             if (this.currentForm.lines) {
-                sourceLines = this.currentForm.lines.map(l => ({ start: sourcePoints[l.a], end: sourcePoints[l.b] }));
+                sourceLines = this.currentForm.lines.map(l => ({
+                    start: sourcePoints[l.a],
+                    end: sourcePoints[l.b],
+                    useTransforms: false // Generated forms are fully explicit
+                }));
             }
             if (this.currentForm.faces) {
                 sourceFaces = this.currentForm.faces.map(f => {
                     const indices = Array.isArray(f) ? f : (f.vertices || f.indices);
                     if (!indices) return { vertices: [] };
                     return {
-                        vertices: indices.map(vi => sourcePoints[vi]).filter(p => !!p)
+                        vertices: indices.map(vi => sourcePoints[vi]).filter(p => !!p),
+                        useTransforms: false // Generated forms are already symmetric
                     };
                 });
             }
         } else {
             // Manual Mode
-            sourceLines = this.baseSegments.map(s => ({ start: s.start, end: s.end }));
+            sourceLines = this.baseSegments.map(s => ({
+                start: s.start,
+                end: s.end,
+                useTransforms: !s.baked // Only transform if not baked
+            }));
+
             sourceFaces = Array.from(this.manualFaces.values()).map(f => ({
-                vertices: f.indices.map(i => this.gridPoints[i]).filter(p => !!p)
+                vertices: f.indices.map(i => this.gridPoints[i]).filter(p => !!p),
+                useTransforms: (f.origin === 'manual' && !f.baked) // Transform if manual and unbaked
             })).filter(f => f.vertices.length >= 3);
         }
 
-        // 1. Lines - ONLY if no faces exist
+        // 1. Lines - ONLY if no faces exist (Wireframe export)
+        const uniqueLineKeys = new Set();
+
         if (sourceFaces.length === 0) {
             sourceLines.forEach(seg => {
-                transforms.forEach(mat => {
+                const matList = seg.useTransforms ? transforms : identity;
+
+                matList.forEach(mat => {
                     const p1 = seg.start.clone().applyMatrix4(mat);
                     const p2 = seg.end.clone().applyMatrix4(mat);
                     const i1 = getPtIndex(p1);
                     const i2 = getPtIndex(p2);
-                    if (i1 !== i2) lines.push({ a: i1, b: i2 });
+
+                    if (i1 !== i2) {
+                        const k = (i1 < i2) ? `${i1}_${i2}` : `${i2}_${i1}`;
+                        if (!uniqueLineKeys.has(k)) {
+                            uniqueLineKeys.add(k);
+                            lines.push({ a: i1, b: i2 });
+                        }
+                    }
                 });
             });
         }
 
-        // 2. Faces (Force Triangulation)
+        // 2. Faces (Deduplicated & Preserving N-gons)
         sourceFaces.forEach(face => {
             const faceVerts = face.vertices;
-            transforms.forEach(mat => {
-                const transformedVerts = faceVerts.map(v => v.clone().applyMatrix4(mat));
+            const matList = face.useTransforms ? transforms : identity;
 
+            matList.forEach(mat => {
+                const transformedVerts = faceVerts.map(v => v.clone().applyMatrix4(mat));
                 const indices = transformedVerts.map(p => getPtIndex(p));
 
-                // SIMPLE TRIANGLE FAN
                 if (indices.length >= 3) {
-                    const p0 = indices[0];
-                    for (let i = 1; i < indices.length - 1; i++) {
-                        // Creates triangles: (0, 1, 2), (0, 2, 3), etc.
-                        faces.push({ vertices: [p0, indices[i], indices[i + 1]] });
+                    // Deduplication Key: Sorted indices
+                    const key = indices.slice().sort((a, b) => a - b).join('_');
+
+                    if (!uniqueFaceKeys.has(key)) {
+                        uniqueFaceKeys.add(key);
+                        faces.push({ vertices: indices });
                     }
                 }
             });
@@ -2790,7 +2819,6 @@ export class App {
             }
         };
     }
-
     _exportOBJ() {
         let output = "# SpaceHarmony OBJ Export\n";
         output += "o SpaceHarmonyObject\n";
