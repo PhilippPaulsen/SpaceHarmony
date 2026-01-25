@@ -2757,10 +2757,49 @@ export class App {
                 useTransforms: !s.baked // Only transform if not baked
             }));
 
-            sourceFaces = Array.from(this.manualFaces.values()).map(f => ({
+            const manual = Array.from(this.manualFaces.values()).map(f => ({
                 vertices: f.indices.map(i => this.gridPoints[i]).filter(p => !!p),
                 useTransforms: (f.origin === 'manual' && !f.baked) // Transform if manual and unbaked
             })).filter(f => f.vertices.length >= 3);
+
+            const auto = this.baseFaces.filter(f => !this.manualFaces.has(f.key)).map(f => {
+                const vertices = f.keys.map(k => this.pointLookup.get(k)).filter(p => !!p);
+
+                // Check if face is baked (all edges baked)
+                let isBaked = false;
+                if (vertices.length >= 3) {
+                    let allEdgesBaked = true;
+                    // We need keys for edge lookup since points might be cloned ?? 
+                    // Actually pointLookup returns reference to gridPoints. 
+                    // But safe to use keys from f.keys.
+                    const keys = f.keys;
+                    for (let i = 0; i < keys.length; i++) {
+                        const k1 = keys[i];
+                        const k2 = keys[(i + 1) % keys.length];
+                        const p1 = this.pointLookup.get(k1);
+                        const p2 = this.pointLookup.get(k2);
+                        if (p1 && p2) {
+                            const segKey = GeometryUtils.segmentKey(p1, p2);
+                            const seg = this.edges.get(segKey);
+                            if (!seg || !seg.baked) {
+                                allEdgesBaked = false;
+                                break;
+                            }
+                        } else {
+                            allEdgesBaked = false;
+                            break;
+                        }
+                    }
+                    isBaked = allEdgesBaked;
+                }
+
+                return {
+                    vertices: vertices,
+                    useTransforms: !isBaked
+                };
+            }).filter(f => f.vertices.length >= 3);
+
+            sourceFaces = [...manual, ...auto];
         }
 
         // 1. Lines - ONLY if no faces exist (Wireframe export)
