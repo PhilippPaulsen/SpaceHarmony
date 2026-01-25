@@ -2833,10 +2833,17 @@ export class App {
 
             matList.forEach(mat => {
                 const transformedVerts = faceVerts.map(v => v.clone().applyMatrix4(mat));
-                const indices = transformedVerts.map(p => getPtIndex(p));
+                let indices = transformedVerts.map(p => getPtIndex(p));
+
+                // FIX: Check determinant for reflection (negative) -> Flip Winding Order
+                // This ensures that reflected faces maintain "Outward" normal orientation
+                // otherwise Blender/Importers calculate "Inward" normals for reflected parts.
+                if (mat.determinant() < 0) {
+                    indices.reverse();
+                }
 
                 if (indices.length >= 3) {
-                    // Deduplication Key: Sorted indices
+                    // Deduplication Key: Sorted indices (Structure only, winding agnostic)
                     const key = indices.slice().sort((a, b) => a - b).join('_');
 
                     if (!uniqueFaceKeys.has(key)) {
@@ -2908,7 +2915,12 @@ export class App {
         this.manualFaces.forEach(face => {
             transforms.forEach(mat => {
                 // Get polygon vertices
-                const poly = face.indices.map(i => this.gridPoints[i].clone().applyMatrix4(mat));
+                let poly = face.indices.map(i => this.gridPoints[i].clone().applyMatrix4(mat));
+
+                // FIX: Check determinant for reflection (negative) -> Flip Winding Order
+                if (mat.determinant() < 0) {
+                    poly.reverse();
+                }
 
                 // Simple fan triangulation
                 if (poly.length >= 3) {
