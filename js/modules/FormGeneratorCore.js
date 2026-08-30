@@ -12,6 +12,7 @@ import { SymmetryEngine } from './SymmetryEngine.js';
 import { GeometryUtils } from './GeometryUtils.js';
 import { ConvexHull } from './ConvexHull.js';
 import { Taxonomy } from './Taxonomy.js';
+import { CONFIG } from './Config.js';
 
 /**
  * Line represents a connection between two points by their indices in a point array.
@@ -1257,4 +1258,165 @@ function _completeForm(form, options = {}) {
             }
         });
     });
+}
+
+// =====================================================================
+// 2D IMPORT (world_of_forms_generator -> SpaceHarmony)
+//
+// Imports the JSON export produced by world_of_forms_generator's
+// export dialog (formatVersion 1: { meta, geometry: { centroid,
+// outerCorners, nodes, edges, adjacency } }). The 2D exporter's
+// nodes/edges are already the un-tessellated, un-symmetry-expanded
+// base cell (drawConnectionWithSymmetry() over there only computes
+// transient render-time copies, never writes back), so no de-tessellation
+// is needed here - just a coordinate-system + id/index translation.
+//
+// adjacency/angleDeg from the 2D export are intentionally NOT processed
+// here - reserved for a future face-detection pass. json2D is not
+// mutated, so a caller can still read json2D.geometry.adjacency itself.
+// =====================================================================
+
+/**
+ * Pure coordinate transform: 2D canvas-space nodes (explicit id, origin
+ * top-left, y-down) -> SpaceHarmony's centered, y-up, z=0 Vector3 space.
+ * No dependency on Form/Line/_validateForm - testable with plain
+ * synthetic { centroid, outerCorners, nodes } objects.
+ *
+ * Scale reference is outerCorners (the shape's actual boundary), not the
+ * node positions themselves, since a sparse click pattern could leave
+ * nodes clustered unevenly - outerCorners always describes the true
+ * cell size regardless of which nodes got connected.
+ *
+ * @param {{centroid:{x:number,y:number}, outerCorners?:Array<{x:number,y:number}>, nodes:Array<{id:number,x:number,y:number}>}} geometry2D
+ * @param {number} targetScale - radius (from origin) the shape's outer boundary should land at
+ * @returns {{points: THREE.Vector3[], idToIndex: Map<number, number>, scale: number, sourceRadius: number}}
+ */
+export function transformFlatGeometry(geometry2D, targetScale = CONFIG.CUBE_HALF_SIZE) {
+    const { centroid, outerCorners = [], nodes = [] } = geometry2D || {};
+    if (!centroid || !nodes.length) {
+        return { points: [], idToIndex: new Map(), scale: 1, sourceRadius: 0 };
+    }
+
+    // Determine source radius from outerCorners, falling back to node
+    // extents if outerCorners is missing/empty.
+    const refPoints = outerCorners.length > 0 ? outerCorners : nodes;
+    let sourceRadius = 0;
+    refPoints.forEach(p => {
+        const dx = p.x - centroid.x, dy = p.y - centroid.y;
+        const r = Math.sqrt(dx * dx + dy * dy);
+        if (r > sourceRadius) sourceRadius = r;
+    });
+    if (sourceRadius < 1e-9) sourceRadius = 1; // degenerate guard (single point / zero-size shape)
+
+    const scale = targetScale / sourceRadius;
+
+    const points = [];
+    const idToIndex = new Map();
+
+    nodes.forEach((n, i) => {
+        const dx = n.x - centroid.x;
+        const dy = n.y - centroid.y;
+        const x = dx * scale;
+        const y = -dy * scale; // canvas y-down -> Three.js y-up
+        points.push(new THREE.Vector3(x, y, 0));
+        idToIndex.set(n.id, i);
+    });
+
+    return { points, idToIndex, scale, sourceRadius };
+}
+
+/**
+ * Imports a world_of_forms_generator JSON export as a SpaceHarmony Form,
+ * bypassing the regular generation pipeline (_defineGrid /
+ * _generateSymmetricForm / _generateSystematic) entirely - it only feeds
+ * the transformed {points, lines} into the same _completeForm/_validateForm
+ * used by that pipeline.
+ *
+ * @param {object} json2D - parsed world_of_forms_generator export (formatVersion 1)
+ * @param {object} [options]
+ * @param {number} [options.targetScale] - see transformFlatGeometry()
+ * @param {boolean} [options.completeForm=true] - run _completeForm after import
+ * @param {object} [options.completeFormOptions] - forwarded to _completeForm
+ * @returns {Form}
+ */
+export function importFlatForm(json2D, options = {}) {
+    const geometry2D = json2D && json2D.geometry;
+    if (!geometry2D) {
+        throw new Error('importFlatForm: input JSON is missing "geometry"');
+    }
+
+    const targetScale = options.targetScale || CONFIG.CUBE_HALF_SIZE;
+    const { points, idToIndex } = transformFlatGeometry(geometry2D, targetScale);
+
+    const lines = [];
+    (geometry2D.edges || []).forEach(([idA, idB]) => {
+        const a = idToIndex.get(idA);
+        const b = idToIndex.get(idB);
+        if (a === undefined || b === undefined) {
+            console.warn(`importFlatForm: skipping edge [${idA},${idB}] - unknown node id`);
+            return;
+        }
+        if (a === b) return; // degenerate self-loop
+        lines.push(new Line(a, b));
+    });
+
+    const form = new Form();
+    form.points = points;
+    form.lines = lines;
+
+    if (options.completeForm !== false) {
+        _completeForm(form, options.completeFormOptions || {});
+    }
+
+    const validation = _validateForm(form);
+    form.faces = validation.closedLoops || [];
+    form.metadata = {
+        source: '2D Import (world_of_forms_generator)',
+        importedShapeType: json2D.meta && json2D.meta.shapeType,
+        importedSymmetryMode: json2D.meta && json2D.meta.symmetryMode,
+        pointCount: form.points.length,
+        lineCount: form.lines.length,
+        faceCount: validation.faces,
+        volumeCount: validation.volumes,
+        isConnected: validation.isConnected,
+        coordinateSystem: "raumharmonik",
+    };
+
+    return form;
+}
+
+/**
+ * Expands a form's points/lines under a named SpaceHarmony symmetry
+ * group, reusing the existing _applySymmetryGroup mechanism unchanged
+ * (same function the regular generation pipeline calls). Generic - any
+ * group registered in SymmetryEngine works, not just 'hex2d'.
+ *
+ * @param {Form|{points:THREE.Vector3[], lines:Line[]}} form
+ * @param {string} groupKey - e.g. 'hex2d', 'cubic', 'tetrahedral', 'icosahedral'
+ * @param {SymmetryEngine} [symmetryEngine]
+ * @returns {Form} the same form, mutated in place
+ */
+export function applySymmetryToForm(form, groupKey, symmetryEngine = new SymmetryEngine()) {
+    const matrices = symmetryEngine.getSymmetryGroup(groupKey);
+    if (!matrices || matrices.length === 0) {
+        console.error(`applySymmetryToForm: symmetry group '${groupKey}' not found or empty.`);
+        return form;
+    }
+
+    _applySymmetryGroup(form, matrices);
+
+    // Point/line counts changed - keep metadata from going stale.
+    const validation = _validateForm(form);
+    form.faces = validation.closedLoops || [];
+    if (form.metadata) {
+        form.metadata.pointCount = form.points.length;
+        form.metadata.lineCount = form.lines.length;
+        form.metadata.faceCount = validation.faces;
+        form.metadata.volumeCount = validation.volumes;
+        form.metadata.isConnected = validation.isConnected;
+        form.metadata.symmetryGroup = groupKey;
+        form.metadata.coxeter = symmetryEngine.getGroupMeta(groupKey);
+    }
+
+    return form;
 }
