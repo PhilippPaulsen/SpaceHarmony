@@ -175,49 +175,6 @@
             </button>
           </div>
 
-          <!--
-          <details open>
-            <summary class="section-label" style="justify-content: flex-start; gap: 8px;">
-              <span data-i18n="ui.shapes">Shapes</span>
-            </summary>
-            <div class="control-content">
-              <div class="icon-strip">
-                <button type="button" id="close-face-button" class="icon-button" data-i18n-title="ui.close.face"
-                  title="Close Face">
-                  <span class="material-icons-outlined" aria-hidden="true">grid_on</span>
-                </button>
-                <button type="button" id="close-volume-button" class="icon-button" data-i18n-title="ui.close.volume"
-                  title="Close Volume">
-                  <span class="material-icons-outlined" aria-hidden="true">view_module</span>
-                </button>
-                <button type="button" id="auto-close-all-button" class="icon-button" data-i18n-title="ui.auto.close"
-                  title="Auto-close All">
-                  <span class="material-icons-outlined" aria-hidden="true">select_all</span>
-                </button>
-              </div>
-              <div class="icon-toggle-row">
-                <label class="icon-toggle" data-i18n-title="ui.auto.mode" title="Auto-close Faces"
-                  aria-label="Auto-close Faces">
-                  <input type="checkbox" id="toggle-auto-close" />
-                  <span class="material-icons-outlined" aria-hidden="true">auto_mode</span>
-                </label>
-                <label class="icon-toggle" data-i18n-title="ui.highlight" title="Enable Color Highlights"
-                  aria-label="Enable Color Highlights">
-                  <input type="checkbox" id="toggle-color-highlights" />
-                  <span class="material-icons-outlined" aria-hidden="true">highlight_alt</span>
-                </label>
-                <label class="icon-toggle" data-i18n-title="ui.auto.rotate" title="Auto Rotate"
-                  aria-label="Auto Rotate">
-                  <input type="checkbox" id="toggle-auto-rotate" checked />
-                  <span class="material-icons-outlined" aria-hidden="true">360</span>
-                </label>
-              </div>
-            </div>
-          </details>
-          -->
-          <div style="display:none"> <!-- Keeping just auto-rotate accessible if needed? No, UI redesign requested. -->
-          </div>
-
           <details open>
             <summary class="section-label" style="justify-content: flex-start; gap: 8px;">
               <span data-i18n="ui.symmetries">Symmetries</span>
@@ -516,9 +473,19 @@
   <script type="module">
     import { App } from './js/modules/App.js';
 
-    document.addEventListener('DOMContentLoaded', () => {
+    // DOMContentLoaded can already have fired by the time this module
+    // finishes loading (module scripts are always deferred) - if so,
+    // addEventListener('DOMContentLoaded', ...) alone would never fire
+    // and App would never be instantiated. Check readyState first.
+    function init() {
       new App();
-    });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
   </script>
 </body>
 

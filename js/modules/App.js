@@ -79,6 +79,11 @@ export class App {
         // Graph
         this.adjacencyGraph = new Map();
 
+        // Holds the Three.js objects for an externally displayed form
+        // (Generator result / 2D import) - see _displayGeneratedForm().
+        // Separate from gridMesh/symmetryGroup (the live-editing grid).
+        this.generatedFormGroup = null;
+
         // Managers
         this.inputManager = new InputManager(this.container, this.sceneManager, {
             onClick: (intersect, pointer) => this._onPointClick(intersect),
@@ -1070,42 +1075,83 @@ export class App {
         alert("The file format is not recognized.");
     }
 
+    // Displays an externally computed form (generateForm()/importFlatForm()
+    // output: { points: Vector3[]|{x,y,z}[], lines: {a,b}[], faces?: number[][] })
+    // by building the same kind of Three.js objects _rebuildVisuals()/
+    // _rebuildSymmetryObjects()/_renderFace() already build for the live-
+    // editing grid - InstancedMesh of spheres for points, LineSegments for
+    // lines, fan-triangulated Mesh per face using the existing cached
+    // materials - added directly to this.sceneManager.scene. No SceneManager
+    // API involved (SceneManager only owns camera/renderer/lighting/reference
+    // frame, never had a points/lines/faces concept - see SceneManager.js).
+    //
+    // This form is display-only: it does not touch this.gridPoints/
+    // this.edges/this.gridMesh (the live click-to-edit grid), it lives in
+    // its own group (this.generatedFormGroup) so it can be swapped out
+    // independently.
     _displayGeneratedForm(form) {
-        // Verify points match grid?
-        // Just call SceneManager helper?
-        // `SceneManager.updateGeometry(points, lines, faces/volumes)`
-
-        // Map indices to Vector3
-        // If form.points are objects {x,y,z}, use them.
-
-        // Reconstruct lines/faces with Vector3s
-        const points = form.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
-        const lines = (form.lines || []).map(l => ({
-            start: points[l.a],
-            end: points[l.b]
-        }));
-
-        // Volumes/Faces
-        // SceneManager expects specific structure.
-        // Let's look at `SceneManager.updateGeometry`.
-        // It's not visible here, but assumed it exists or we use `addMesh`.
-
-        // We'll reuse `_onWorkerMessage` logic which calls `this.sceneManager.updateGeometry`.
-        // But `_onWorkerMessage` logic is complex (deduplication of lines etc).
-
-        // Shortcut: Use `sceneManager.clear()` and then add components.
-        this.sceneManager.clear();
-        this.sceneManager.addPoints(points);
-        this.sceneManager.addLines(lines);
-
-        // Faces
-        if (form.faces) {
-            const faceMeshes = form.faces.map(f => {
-                return f.vertices.map(vi => points[vi]); // Array of vectors
+        if (this.generatedFormGroup) {
+            this.sceneManager.scene.remove(this.generatedFormGroup);
+            this.generatedFormGroup.traverse(obj => {
+                if (obj.geometry) obj.geometry.dispose();
             });
-            this.sceneManager.addFaces(faceMeshes); // Check signature
+            this.generatedFormGroup = null;
         }
 
+        const group = new THREE.Group();
+        const points = (form.points || []).map(p => new THREE.Vector3(p.x, p.y, p.z));
+
+        // Points - same InstancedMesh-of-spheres pattern as _rebuildVisuals().
+        if (points.length > 0) {
+            const pointGeom = new THREE.SphereGeometry(0.01, 8, 8);
+            const pointMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+            const pointMesh = new THREE.InstancedMesh(pointGeom, pointMat, points.length);
+            const dummy = new THREE.Object3D();
+            points.forEach((p, i) => {
+                dummy.position.copy(p);
+                dummy.updateMatrix();
+                pointMesh.setMatrixAt(i, dummy.matrix);
+            });
+            pointMesh.instanceMatrix.needsUpdate = true;
+            group.add(pointMesh);
+        }
+
+        // Lines - same LineSegments + this.materials.line pattern used in
+        // _rebuildSymmetryObjects() (e.g. around line 1810-1814).
+        const lineSegPoints = [];
+        (form.lines || []).forEach(l => {
+            const a = points[l.a], b = points[l.b];
+            if (a && b) lineSegPoints.push(a, b);
+        });
+        if (lineSegPoints.length > 0) {
+            const lineGeom = new THREE.BufferGeometry().setFromPoints(lineSegPoints);
+            group.add(new THREE.LineSegments(lineGeom, this.materials.line));
+        }
+
+        // Faces - same fan-triangulation as the non-curved branch of
+        // _renderFace() (line ~2104-2115), but reading raw point-index
+        // arrays directly (form.faces[i] = [0,1,2], not {vertices:[...]}) -
+        // matches _validateForm().closedLoops' actual output shape.
+        (form.faces || []).forEach(faceIndices => {
+            if (!faceIndices || faceIndices.length < 3) return;
+            const facePoints = faceIndices.map(i => points[i]).filter(p => p !== undefined);
+            if (facePoints.length < 3) return;
+
+            const vertices = [];
+            const p0 = facePoints[0];
+            for (let i = 1; i < facePoints.length - 1; i++) {
+                vertices.push(p0.x, p0.y, p0.z);
+                vertices.push(facePoints[i].x, facePoints[i].y, facePoints[i].z);
+                vertices.push(facePoints[i + 1].x, facePoints[i + 1].y, facePoints[i + 1].z);
+            }
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            geometry.computeVertexNormals();
+            group.add(new THREE.Mesh(geometry, this.materials.face));
+        });
+
+        this.sceneManager.scene.add(group);
+        this.generatedFormGroup = group;
         this.currentForm = form;
 
         // Update stats
