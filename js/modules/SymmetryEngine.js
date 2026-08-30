@@ -13,11 +13,19 @@ import { GeometryUtils } from './GeometryUtils.js';
  *                confirmed 12 proper / 12 improper, closed under multiplication,
  *                no proper 4-fold rotation present, which rules out O and matches Td)
  *   icosahedral: 60 matrices (I, rotation-only, inversion deliberately omitted)
+ *   hex2d:       12 matrices (D6: 6 proper + 6 improper, closed under multiplication,
+ *                all transforms fix z=0). This is only the POINT-GROUP part of
+ *                the p6m wallpaper group - no translational symmetry is included
+ *                (that would need to be layered on separately via
+ *                settings.translation, same as it would for cubic/tetrahedral/
+ *                icosahedral). Grid invariance confirmed against
+ *                GridSystem.js::_generateHexGrid at densities 1-4.
  */
 const GROUP_META = {
   cubic: { coxeter: '[4,3]', schoenflies: 'Oh', order: 48, verified: true },
   tetrahedral: { coxeter: '[3,3]', schoenflies: 'Td', order: 24, verified: true },
   icosahedral: { coxeter: '[5,3]+', schoenflies: 'I', order: 60, verified: true },
+  hex2d: { coxeter: '[6]', schoenflies: 'D6h(2D)', order: 12, verified: true },
 };
 
 export class SymmetryEngine {
@@ -535,6 +543,20 @@ export class SymmetryEngine {
       // For Space Harmony, we prefer the Rotational Group (I) for cleaner generation.
       // Full Ih (with inversion) causes edge duplication and winding issues for simple form finding.
       return this._deduplicate(groupI);
+    }
+
+    if (groupName === 'hex2d') {
+      // Point-group part of p6m (D6, order 12) for a flat z=0 hex layer.
+      // NOT the full 2D wallpaper group - no translational symmetry is
+      // included here (that lives separately in settings.translation).
+      // Mirror through the vertex at angle 0 (see GridSystem.js::_generateHexGrid,
+      // whose vertices start at angle 0) so the hex grid stays invariant
+      // under this group - verified, not just assumed.
+      const r6 = this._rotationMatrix('z', Math.PI / 3);
+      const mirror = this._reflectionMatrix('zx');
+
+      const groupD6 = this._generateGroupFromGenerators([r6, mirror]);
+      return this._deduplicate(groupD6);
     }
 
     return matrices;

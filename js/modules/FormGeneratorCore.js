@@ -733,6 +733,44 @@ function _defineGrid(gridSize, pointDensity, options = {}) {
                 }
             }
         }
+    } else if (symGroup === 'hex2d') {
+        // Flat hex grid at z=0 (Mirrors GridSystem.js::_generateHexGrid)
+        // Vertices at multiples of 60 deg starting at angle 0, so the point
+        // set is invariant under the 'hex2d' symmetry group (D6, order 12).
+        const side = (half > 0 ? half : 1.0);
+        const outerCorners = [];
+        for (let i = 0; i < 6; i++) {
+            const angle = (Math.PI / 3) * i;
+            outerCorners.push(new THREE.Vector3(side * Math.cos(angle), side * Math.sin(angle), 0));
+        }
+
+        const ringCount = Math.max(1, Math.floor(pointDensity));
+        const uniqueKeys = new Set();
+        const addPoint = (x, y) => {
+            const v = new THREE.Vector3(x, y, 0);
+            const key = GeometryUtils.pointKey(v);
+            if (!uniqueKeys.has(key)) { uniqueKeys.add(key); points.push(v); }
+        };
+
+        if (ringCount <= 1) {
+            outerCorners.forEach(p => addPoint(p.x, p.y));
+            addPoint(0, 0);
+        } else {
+            for (let r = ringCount; r >= 1; r--) {
+                const scale = r / ringCount;
+                const ringC = outerCorners.map(p => p.clone().multiplyScalar(scale));
+                ringC.forEach(p => addPoint(p.x, p.y));
+                const bridge = r - 1;
+                for (let c = 0; c < 6; c++) {
+                    const c1 = ringC[c], c2 = ringC[(c + 1) % 6];
+                    for (let seg = 1; seg <= bridge; seg++) {
+                        const t = seg / (bridge + 1);
+                        addPoint(c1.x + t * (c2.x - c1.x), c1.y + t * (c2.y - c1.y));
+                    }
+                }
+            }
+            addPoint(0, 0);
+        }
     } else {
         // 2. Standard Cartesian Grid (Default)
         const steps = [];

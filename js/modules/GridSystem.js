@@ -21,6 +21,8 @@ export class GridSystem {
             return this._generateIcosahedralGrid(density, cubeHalfSize);
         } else if (this.system === 'tetrahedral') {
             return this._generateTetrahedralGrid(density, cubeHalfSize);
+        } else if (this.system === 'hex2d') {
+            return this._generateHexGrid(density, cubeHalfSize);
         } else {
             return this._generateCubicGrid(density, cubeHalfSize);
         }
@@ -261,6 +263,54 @@ export class GridSystem {
             }
         }
 
+        return points;
+    }
+
+    /**
+     * Flat hex grid at z=0 (6 outer corners + concentric rings with edge-
+     * bridging nodes + center), sized for the 'hex2d' symmetry group
+     * (D6, order 12 - see SymmetryEngine.js). Vertices sit at multiples
+     * of 60 deg starting at angle 0 so the point set is invariant under
+     * that group (verified separately, not just assumed).
+     */
+    _generateHexGrid(density, halfSize) {
+        const points = [];
+        const uniqueKeys = new Set();
+        const addPoint = (x, y) => {
+            const v = new THREE.Vector3(x, y, 0);
+            const key = GeometryUtils.pointKey(v);
+            if (!uniqueKeys.has(key)) { uniqueKeys.add(key); points.push(v); }
+        };
+
+        const side = (halfSize > 0 ? halfSize : 1.0);
+        const outerCorners = [];
+        for (let i = 0; i < 6; i++) {
+            const angle = (Math.PI / 3) * i; // 0deg, 60deg, ... 300deg
+            outerCorners.push(new THREE.Vector3(side * Math.cos(angle), side * Math.sin(angle), 0));
+        }
+
+        const ringCount = Math.max(1, Math.floor(density));
+
+        if (ringCount <= 1) {
+            outerCorners.forEach(p => addPoint(p.x, p.y));
+            addPoint(0, 0);
+            return points;
+        }
+
+        for (let r = ringCount; r >= 1; r--) {
+            const scale = r / ringCount;
+            const ringC = outerCorners.map(p => p.clone().multiplyScalar(scale));
+            ringC.forEach(p => addPoint(p.x, p.y));
+            const bridge = r - 1;
+            for (let c = 0; c < 6; c++) {
+                const c1 = ringC[c], c2 = ringC[(c + 1) % 6];
+                for (let seg = 1; seg <= bridge; seg++) {
+                    const t = seg / (bridge + 1);
+                    addPoint(c1.x + t * (c2.x - c1.x), c1.y + t * (c2.y - c1.y));
+                }
+            }
+        }
+        addPoint(0, 0);
         return points;
     }
 }
