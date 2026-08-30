@@ -7,7 +7,7 @@
  * @version 2.0.0
  */
 
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js';
+import THREE from './ThreeRuntime.js';
 import { SymmetryEngine } from './SymmetryEngine.js';
 import { GeometryUtils } from './GeometryUtils.js';
 import { ConvexHull } from './ConvexHull.js';

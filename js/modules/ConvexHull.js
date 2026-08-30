@@ -9,7 +9,7 @@
  * const geometry = hull.generate(); // { vertices: [], faces: [[i,j,k], ...] }
  */
 
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js';
+import THREE from './ThreeRuntime.js';
 
 const EPSILON = 1e-4;
 
