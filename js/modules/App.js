@@ -977,12 +977,12 @@ export class App {
         }
     }
 
-    _loadFormToCanvas(form) {
+    _loadFormToCanvas(form, options = {}) {
         this._clearAll();
 
         // 1. Generated Form (Standard "Safe" Format with explicit geometry)
         if (form.points && Array.isArray(form.points)) {
-            this._displayGeneratedForm(form);
+            this._displayGeneratedForm(form, options);
             return;
         }
 
@@ -1102,7 +1102,9 @@ export class App {
     // this.edges/this.gridMesh (the live click-to-edit grid), it lives in
     // its own group (this.generatedFormGroup) so it can be swapped out
     // independently.
-    _displayGeneratedForm(form) {
+    _displayGeneratedForm(form, options = {}) {
+        const showPoints = options.showPoints !== false;
+
         if (this.generatedFormGroup) {
             this.sceneManager.scene.remove(this.generatedFormGroup);
             this.generatedFormGroup.traverse(obj => {
@@ -1115,7 +1117,10 @@ export class App {
         const points = (form.points || []).map(p => new THREE.Vector3(p.x, p.y, p.z));
 
         // Points - same InstancedMesh-of-spheres pattern as _rebuildVisuals().
-        if (points.length > 0) {
+        // Skipped when showPoints is false (e.g. 2D import: these points
+        // aren't interactive/editable like the live-editing grid, so
+        // rendering them would falsely suggest they are).
+        if (points.length > 0 && showPoints) {
             const pointGeom = new THREE.SphereGeometry(0.01, 8, 8);
             const pointMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
             const pointMesh = new THREE.InstancedMesh(pointGeom, pointMat, points.length);
@@ -3166,7 +3171,7 @@ export class App {
             const form = importFlatForm(json2D);
             const groupKey = mapShapeTypeToSymmetryGroup(json2D.meta && json2D.meta.shapeType);
             applySymmetryToForm(form, groupKey);
-            this._loadFormToCanvas(form);
+            this._loadFormToCanvas(form, { showPoints: false });
             this.uiManager.showNotification(
                 `Imported 2D form (${groupKey}): ${form.points.length} points, ${form.faces.length} faces`
             );
