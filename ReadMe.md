@@ -52,9 +52,12 @@ brew install pkg-config cairo pango libpng jpeg giflib librsvg
 - ✅ Light/Dark Mode (Apple Glass-kompatibel)  
 - ✅ Export `.json`, `.obj`, `.stl` inkl. Metadatenstruktur  
 - ✅ Download-Buttons für `.obj` und `.json` in der Galerie  
-- ✅ Intelligentes Labeling nach **Ostwald/Hinterreiter-System**:
-  - z. B. `V1_6A.obj` für erstes Volumen mit 6 Punkten  
-  - Vertex-Labels auf Basis ihrer Lage im Raum (z. B. `X+_Y0_Z-`)  
+- ✅ Automatische Klassifikation & Benennung generierter Formen (`js/modules/Taxonomy.js`):
+  - `vProfile`: Vertex-Gruppen nach Betragssignatur (z. B. `8x[1.00,1.00,1.00]+6x[1.00,0.00,0.00]`)
+  - `eProfile`: Kanten-Gruppen nach Länge + Richtung
+  - `cGeo`: kanonische Flächen-Signatur + Hash (z. B. `F6-{6xV4}`)
+  - Zusammengesetzter Name: `V(...)|E{...}|<hash>` — nur im systematischen Generator-Modus (`mode: "systematic"`)
+  - Zufalls-/Symmetrie-Pfad nutzt stattdessen ein einfaches Debug-Label: `Form #<n> [<STRICT|RLX>-P<pointCount>-<SMPL|CPLX>]`
   - Labels + Metadaten werden im Export eingebettet
 
 ---
@@ -134,6 +137,7 @@ Formen werden korrekt erkannt und gespeichert.
 ### 🧭 Systematik & Klassifikation
 - [ ] Systematische Erzeugung aller Kombinationsformen  
 - [ ] Gruppierung nach Symmetrie & Struktur  
+- [ ] Ostwald/Hinterreiter-Labeling (z. B. `V1_6A`, Vertex-Labels wie `X+_Y0_Z-`) als zusätzliches Namensschema neben `Taxonomy.js` — bisher nicht implementiert  
 - [ ] Export für Buch, Galerie, Forschung  
 - [ ] Modularer Volumenbau aus Teilformen  
 
