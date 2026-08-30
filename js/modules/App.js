@@ -8,6 +8,19 @@ import { GeometryUtils } from './GeometryUtils.js';
 import { LocalizationManager } from './LocalizationManager.js';
 import { GridSystem } from './GridSystem.js';
 import { Taxonomy } from './Taxonomy.js';
+import { importFlatForm, applySymmetryToForm } from './FormGeneratorCore.js';
+
+// Maps a world_of_forms_generator 2D export's meta.shapeType to a
+// SpaceHarmony symmetry group for the initial import expansion. Only
+// 'hex' has a purpose-built match (hex2d, added for exactly this case);
+// triangle/square/unknown fall back to 'cubic' since there is currently
+// no SpaceHarmony group specific to a triangular or square 2D cell.
+// Named/exported so this can be extended later without hunting for an
+// inline conditional.
+export function mapShapeTypeToSymmetryGroup(shapeType) {
+    if (shapeType === 'hex') return 'hex2d';
+    return 'cubic';
+}
 
 export class App {
     constructor() {
@@ -3110,17 +3123,57 @@ export class App {
             if (!file) return;
             const reader = new FileReader();
             reader.onload = (ev) => {
+                let data;
                 try {
-                    const data = JSON.parse(ev.target.result);
-                    this._loadJSON(data);
+                    data = JSON.parse(ev.target.result);
                 } catch (err) {
                     console.error(err);
-                    alert("Invalid JSON");
+                    this.uiManager.showNotification("Invalid JSON");
+                    return;
+                }
+
+                if (this._isFlat2DExport(data)) {
+                    this._importFlat2D(data);
+                } else if (data.baseSegments || (data.data && data.data.segments)) {
+                    // Recognized native (App session) or Blender/external format -
+                    // existing behavior, untouched.
+                    this._loadJSON(data);
+                } else {
+                    this.uiManager.showNotification("Unrecognized JSON format");
                 }
             };
             reader.readAsText(file);
         };
         input.click();
+    }
+
+    // world_of_forms_generator's export dialog (formatVersion 1) writes
+    // { formatVersion, meta, geometry: { centroid, outerCorners, nodes, edges, adjacency } } -
+    // distinct enough from the native baseSegments format and the
+    // data.data.segments Blender/external format that this check can't
+    // collide with either.
+    _isFlat2DExport(data) {
+        return !!(data && data.formatVersion === 1 && data.geometry && Array.isArray(data.geometry.nodes));
+    }
+
+    _importFlat2D(json2D) {
+        const nodes = (json2D.geometry && json2D.geometry.nodes) || [];
+        if (nodes.length === 0) {
+            this.uiManager.showNotification("2D import has no nodes — nothing to display");
+            return;
+        }
+        try {
+            const form = importFlatForm(json2D);
+            const groupKey = mapShapeTypeToSymmetryGroup(json2D.meta && json2D.meta.shapeType);
+            applySymmetryToForm(form, groupKey);
+            this._loadFormToCanvas(form);
+            this.uiManager.showNotification(
+                `Imported 2D form (${groupKey}): ${form.points.length} points, ${form.faces.length} faces`
+            );
+        } catch (err) {
+            console.error('2D import failed:', err);
+            this.uiManager.showNotification(`2D import failed: ${err.message}`);
+        }
     }
 
     _loadJSON(data) {
