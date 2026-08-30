@@ -1,6 +1,25 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js';
 import { GeometryUtils } from './GeometryUtils.js';
 
+/**
+ * Coxeter/Schoenflies metadata for the named symmetry groups produced by
+ * getSymmetryGroup(). Additive only — does not affect the matrix arrays
+ * themselves or any existing metadata field.
+ *
+ * `order` is the actual matrix count after BFS closure (_generateGroupFromGenerators),
+ * verified against the running code, not assumed from theory:
+ *   cubic:       48 matrices (O, order 24, doubled with inversion -> Oh, order 48)
+ *   tetrahedral: 24 matrices (T, order 12, extended with one mirror -> order 24;
+ *                confirmed 12 proper / 12 improper, closed under multiplication,
+ *                no proper 4-fold rotation present, which rules out O and matches Td)
+ *   icosahedral: 60 matrices (I, rotation-only, inversion deliberately omitted)
+ */
+const GROUP_META = {
+  cubic: { coxeter: '[4,3]', schoenflies: 'Oh', order: 48, verified: true },
+  tetrahedral: { coxeter: '[3,3]', schoenflies: 'Td', order: 24, verified: true },
+  icosahedral: { coxeter: '[5,3]+', schoenflies: 'I', order: 60, verified: true },
+};
+
 export class SymmetryEngine {
   constructor() {
     this.settings = {
@@ -424,6 +443,17 @@ export class SymmetryEngine {
 
   getGroupMatrices(groupName) {
     return this.getSymmetryGroup(groupName);
+  }
+
+  /**
+   * Returns Coxeter/Schoenflies metadata for a named symmetry group.
+   * Purely additive sibling to getSymmetryGroup()/getGroupMatrices() —
+   * does not change their return shape (an array of THREE.Matrix4).
+   * @param {string} groupName
+   * @returns {{coxeter: string, schoenflies: string, order: number, verified: boolean} | undefined}
+   */
+  getGroupMeta(groupName) {
+    return GROUP_META[groupName];
   }
 
   _generateGroupMatrices(groupName) {

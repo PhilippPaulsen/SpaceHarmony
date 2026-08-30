@@ -110,6 +110,7 @@ export function generateForm(gridSize = 3, pointDensity = 2, options = {}) {
     form.metadata = _generateMetaData(form, { gridSize, pointDensity, ...options }, validationResults, isSimpleAndLowDensity);
     form.metadata.coordinateSystem = "raumharmonik";
     form.metadata.scaledTo = `gridSize${targetGridSize}`;
+    form.metadata.coxeter = symmetry.getGroupMeta(validationResults.symmetryProperties);
 
     // console.log(`[FormGen] Final Faces: ${form.faces.length}`);
 
@@ -388,6 +389,7 @@ function _generateSystematic(gridSize, pointDensity, options) {
 
     // Standard properties
     form.metadata.symmetry = "Oh (Cubic)";
+    form.metadata.coxeter = symmetry.getGroupMeta(rawGroup);
     // Convexity Check: Simple check if volumeCount=1 and faceCount matches Euler?
     // Actually, let's leave 'convex' undefined or false unless we check it.
     // Taxonomy might tell us if it's a known solid.
